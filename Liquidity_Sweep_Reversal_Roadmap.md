@@ -236,7 +236,7 @@ Closing:
 
 No midpoint execution for actual P/L.
 
-## 1.7 Cost model
+## 1.7 Cost and execution model
 
 The research engine supports:
 
@@ -244,9 +244,25 @@ The research engine supports:
 
 `Swap`
 
-`Configured slippage`
-
 `Spread`
+
+`Slippage`
+
+`Latency`
+
+Explicit Inputs:
+
+`SlippageMode = NONE` (default baseline)
+
+`EntrySlippagePoints = 0`
+
+`ExitSlippagePoints = 0`
+
+`LatencyMode = ZERO` (default baseline)
+
+`FixedExecutionDelayMs` exists for controlled research stress tests.
+
+The baseline does not invent historical slippage values. Any non-zero slippage/latency assumption must be explicitly shown in the run configuration and report.
 
 Commission must be configurable by dated schedule or current-condition preset.
 
@@ -1417,7 +1433,19 @@ Sensitivity results are reported as stability ranges.
 
 The engine must not search arbitrary hundreds of parameter values.
 
-## 6.6 Regime robustness
+## 6.6 Execution stress validation
+
+Run controlled robustness variants for:
+
+- zero slippage / zero latency
+- small fixed adverse entry slippage
+- small fixed adverse exit slippage
+- combined entry/exit slippage
+- fixed execution delays where the tester/model supports them
+
+These are stress tests, not historical claims. The exact stress values must be declared before the run and included in the final report.
+
+## 6.7 Regime robustness
 
 Within the Development data, report performance separately across meaningful historical blocks.
 
@@ -1435,13 +1463,13 @@ without using these splits as a hidden optimizer.
 
 The objective is to determine whether the behavior exists across more than one market regime.
 
-## 6.7 Secondary-symbol robustness
+## 6.8 Secondary-symbol robustness
 
 After XAUUSD core rules are frozen, the same deterministic engine may be run on XAGUSD as a **robustness check**, not as a parameter-selection tool for XAUUSD.
 
 The secondary symbol result cannot be used to alter the already-frozen XAUUSD OOS rule set.
 
-## 6.8 Data-source robustness
+## 6.9 Data-source robustness
 
 Primary research remains the target broker/tester feed because execution spread and symbol rules are broker-specific.
 
@@ -1453,7 +1481,7 @@ A secondary historical source may be used only for:
 
 It must not be mixed tick-by-tick with the target broker feed.
 
-## 6.9 Experimental freeze
+## 6.10 Experimental freeze
 
 After the experimental phase:
 
@@ -1463,7 +1491,7 @@ the strategy configuration intended for the extended run is frozen.
 
 Any material strategy-rule change after seeing extended-development performance creates a new research version and must not be silently folded into the old version.
 
-## 6.10 Extended development test
+## 6.11 Extended development test
 
 Run the frozen version on:
 
@@ -1475,7 +1503,7 @@ and:
 
 Exclude all of 2025.
 
-## 6.11 Final OOS
+## 6.12 Final OOS
 
 Run the frozen configuration on:
 
@@ -1489,7 +1517,7 @@ No OOS observation may feed:
 - scenario pruning
 - code changes intended to improve the OOS result
 
-## 6.12 Final research package
+## 6.13 Final research package
 
 Must contain:
 
