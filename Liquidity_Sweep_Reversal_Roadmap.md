@@ -1,7 +1,9 @@
 # Liquidity Sweep Reversal — Extended Implementation & Research Roadmap
 
 **Document name:** `Liquidity_Sweep_Reversal_Roadmap.md`  
-**Status:** EXTENDED FINAL — implementation/research-ready  
+**Status:** V2 HARDENED SPEC — research + production-architecture ready  
+**Research audit date:** 2026-09-28  
+**V2 design score:** 8.1/10 for methodology/architecture when implemented exactly; profitability remains unvalidated  
 **Baseline symbol:** XAUUSD  
 **Baseline broker context:** FundedNext / MT5  
 **Baseline signal timeframe:** M1  
@@ -16,6 +18,74 @@
 ---
 
 # 0. Research Decisions Locked Before Implementation
+
+## 0A. V2 HARDENING — BINDING OVERRIDES
+
+Where this section conflicts with an earlier sentence, this section wins.
+
+### 0A.1 Acceptance / rejection framework
+
+A positive backtest is not sufficient for acceptance. The project has three separate gates:
+
+1. implementation correctness;
+2. research validity;
+3. deployment readiness.
+
+A configuration is blocked by unresolved look-ahead, timestamp ambiguity, material data contamination, illegal broker execution semantics, unrecoverable risk-state divergence, or any use of OOS observations for selection.
+
+Pre-register before untouched OOS:
+
+- PrimaryConfidenceLevel = 95%
+- MinTradesForInferentialStats = 200
+- MaxSinglePeriodNetRContribution = 50%
+- MaxStressExpectancyDegradation = 50%
+- MaxDeclaredPropBreachProbability = 5%
+
+Below the inferential sample minimum, classification is **INCONCLUSIVE**.
+
+Primary evidence is mean NetR per closed trade with a one-sided 95% block-bootstrap lower confidence bound. Positive point estimate alone is never an acceptance criterion.
+
+### 0A.2 Deterministic configuration selection
+
+Never select by “highest historical NetR”.
+
+The selection rule must be frozen before OOS:
+
+1. eliminate configurations failing hard/OOS gates;
+2. among survivors prefer lower rule complexity;
+3. if tied, prefer lower tail risk/drawdown under the declared stress set;
+4. use untouched OOS NetR only as the final tie-breaker.
+
+A new material candidate after results are seen creates a new research version and restarts the holdout process.
+
+### 0A.3 Research / live separation
+
+Architecture is explicitly:
+
+- Strategy Core — deterministic, side-effect-free signal and lifecycle logic.
+- Research Simulator — synthetic multi-scenario execution over one tick stream.
+- Live Execution Adapter — one frozen deployment configuration only.
+- Ledger / Reporting — immutable candidate, event and trade records.
+
+The Full Matrix is research simulation, not fifteen live strategies.
+
+### 0A.4 Liquidity terminology boundary
+
+PDH/PDL, session extremes, swings and equal highs/lows are **price-level proxies**, not direct observations of institutional liquidity or a centralized order book. DOM, if later available, is a separate data source and hypothesis.
+
+### 0A.5 Validation chronology
+
+- 2026-01-01 → 2026-09-28 = discovery / experiment
+- 2020-07-01 → 2024-12-31 = development / robustness
+- 2025-01-01 → 2025-12-31 = untouched historical OOS
+- 2026-09-29 → onward = true forward validation
+
+A material rule change after discovery/development starts a new research version and invalidates the prior OOS selection process.
+
+### 0A.6 Reproducibility
+
+Every run produces a DataManifest containing code SHA, roadmap hash, MT5 build, broker/server, account-rule profile, symbol specification, requested/actual range, tick source and fallback coverage, server-time basis, cost/slippage/latency model, scenario IDs, declared trial count, random seeds and ledger checksum.
+
 
 This section records the decisions that were added/changed after the external review. They are not suggestions for the implementation phase; they are part of the specification.
 
@@ -92,6 +162,10 @@ These rules apply to every phase.
 12. **Every code-changing phase updates this roadmap.**
 13. **Roadmap filename and relative path never change:** `Liquidity_Sweep_Reversal_Roadmap.md`.
 14. **Changed files keep their original filenames and relative paths. Unchanged files are untouched.**
+15. **Research matrices are synthetic simulations; live trading uses one frozen configuration.**
+16. **Broker-native protective SL is mandatory for live deployment where supported.**
+17. **All OHLC-derived logic uses one declared bar price source; executable P/L uses Bid/Ask.**
+18. **Every research run is reproducible from its DataManifest.**
 
 ---
 
