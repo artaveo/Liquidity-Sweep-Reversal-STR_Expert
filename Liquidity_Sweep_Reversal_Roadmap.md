@@ -97,7 +97,7 @@ Academic market-microstructure research supports two relevant facts:
 1. Clearly defined support/resistance levels can have measurable intraday turning-point information.
 2. Once clustered levels are crossed, stop-loss order flow can also accelerate price in the breakout direction.
 
-Therefore a liquidity sweep/reclaim is a meaningful reversal hypothesis, but a reclaim candle alone is not proof that reversal will continue. The project must keep the unconfirmed version as a control and test one strict confirmation variant separately rather than silently replacing the original hypothesis.
+Therefore a liquidity sweep/reclaim is a meaningful reversal hypothesis, but a reclaim candle alone is not proof that reversal will continue. The project must keep the unconfirmed reclaim control as a control hypothesis and test one strict confirmation variant separately rather than silently replacing the original hypothesis.
 
 ## 0.2 No universal claim that “M1 gold sweeps usually continue”
 
@@ -334,7 +334,7 @@ This makes every accepted/rejected candidate auditable without reconstructing lo
 Baseline:
 SignalBarPriceSource = BID
 
-All bar-derived structure uses BID consistently. Choosing LAST in a future research study state creates a new research version. Execution remains Bid/Ask-specific.
+All bar-derived structure uses BID consistently. Choosing LAST in a future research study state creates a distinct research study state. Execution remains Bid/Ask-specific.
 
 ### 0B.17 Confirmation lifecycle is atomic
 
@@ -2156,11 +2156,11 @@ After the experimental phase:
 
 the strategy configuration intended for the extended run is frozen.
 
-Any material strategy-rule change after seeing extended-development performance creates a new research version and must not be silently folded into the old version.
+Any material strategy-rule change after seeing extended-development performance reopens the research selection/holdout process and must not be silently folded into the prior study state.
 
 ## 8.5 Extended development test
 
-Run the frozen version on:
+Run the frozen configuration on:
 
 `2020-07-01 → 2024-12-31`
 
@@ -2275,7 +2275,7 @@ Starting 2026-09-29, the frozen configuration enters:
 
 SHADOW -> DEMO -> LIVE_AFTER_APPROVAL
 
-Forward data records actual spread, entry/exit slippage, latency, rejects, downtime, restarts and reconciliation errors. These observations may inform a future research version but never retroactively alter the 2025 OOS.
+Forward data records actual spread, entry/exit slippage, latency, rejects, downtime, restarts and reconciliation errors. These observations may inform a future research study state but never retroactively alter the 2025 OOS.
 
 ## 9.4 Deployment gate
 
