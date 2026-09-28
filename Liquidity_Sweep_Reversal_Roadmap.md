@@ -1,9 +1,9 @@
 # Liquidity Sweep Reversal — Extended Implementation & Research Roadmap
 
 **Document name:** `Liquidity_Sweep_Reversal_Roadmap.md`  
-**Status:** V2 HARDENED SPEC — research + production-architecture ready  
+**Status:** V3 STRATEGY-LOGIC HARDENED SPEC — research + production-architecture ready  
 **Research audit date:** 2026-09-28  
-**V2 design score:** 8.1/10 for methodology/architecture when implemented exactly; profitability remains unvalidated  
+**V3 design score:** 8.6/10 for methodology/architecture and deterministic strategy specification when implemented exactly; profitability remains unvalidated  
 **Baseline symbol:** XAUUSD  
 **Baseline broker context:** FundedNext / MT5  
 **Baseline signal timeframe:** M1  
@@ -143,6 +143,182 @@ The selected TP_R is a **net target against all costs that are deterministically
 Unpredictable future market gaps or execution deviations cannot be mathematically guaranteed away; those are recorded as actual execution deviation rather than falsely counted as a full target.
 
 ---
+
+## 0B. V3 STRATEGY-LOGIC HARDENING — BINDING OVERRIDES
+
+This section closes the remaining strategy-definition loopholes. Where it conflicts with earlier strategy wording, this section wins.
+
+### 0B.1 Single event stream, scenario-neutral market structure
+
+Liquidity detection, sweep detection, touch counting, swing confirmation, equal-level formation and event timestamps are generated once by the Strategy Core.
+
+Research scenarios consume that same event stream.
+
+A scenario must never create or destroy a liquidity event merely because a filter, TP, BE or risk rule differs. This prevents scenario-dependent opportunity sets.
+
+### 0B.2 Exact liquidity-pool geometry
+
+For every pooled set of high-side levels define:
+- PoolLower = minimum member level
+- PoolUpper = maximum member level
+- PoolAnchor = median member level
+
+For low-side pools use the analogous band.
+
+Clustering is only for deduplication and common event identity; it does not erase the member prices.
+
+A high-side sweep is valid only when all are true:
+- PreviousBarClose < PoolLower
+- SweepOpen <= PoolLower
+- SweepHigh > PoolUpper
+- SweepClose < PoolLower
+
+A low-side sweep is valid only when all are true:
+- PreviousBarClose > PoolUpper
+- SweepOpen >= PoolUpper
+- SweepLow < PoolLower
+- SweepClose > PoolUpper
+
+This rejects already-crossed-at-open and gap-like classifications and requires traversal of the pooled band before reclaim.
+
+### 0B.3 Exact penetration and reclaim metrics
+
+For a high-side sweep:
+- Penetration = SweepHigh - PoolUpper
+- ReclaimDistance = PoolLower - SweepClose
+
+For a low-side sweep:
+- Penetration = PoolLower - SweepLow
+- ReclaimDistance = SweepClose - PoolUpper
+
+Store raw-price and ATR-normalized values. Non-positive penetration or reclaim invalidates the candidate.
+
+### 0B.4 Event-consumption rule
+
+A valid sweep is a market event whether or not a later filter rejects the trade.
+
+VALID_SWEEP_EVENT -> RECORD_EVENT -> CONSUME_LEVEL_INSTANCE
+
+Filter rejection never resurrects the level. The same physical sweep cannot become multiple opportunities by changing filter/scenario state.
+
+### 0B.5 Touch-count definition
+
+A pre-sweep touch occurs when the declared SignalBarPriceSource enters or crosses the pool band before the sweep candle opens.
+
+Rules:
+- timestamp strictly earlier than sweep-candle open;
+- multiple ticks inside one bar count as one touch;
+- the band must be exited before a later re-entry can count as another touch;
+- the sweep candle itself is not a pre-sweep touch.
+
+Touch timestamps and the band touched are stored.
+
+### 0B.6 Level eligibility and freshness
+
+A level is eligible only if its defining information became available before the sweep candle opened.
+
+- PDH/PDL = previous fully completed broker-time day;
+- previous-session high/low = previous fully completed configured session;
+- swing = usable only after right-side confirmation closes;
+- equal-high/low cluster = formed only from already confirmed swings.
+
+No level created or modified using information from the sweep candle or later bars may participate in that sweep.
+
+### 0B.7 Target-room look-ahead prohibition
+
+Target-room analysis may use only opposing liquidity that is known and eligible at the exact entry timestamp.
+
+Future swings, future equal-high/low clusters and future session levels cannot define or invalidate the trade.
+
+If no eligible opposing liquidity exists at entry, report NO_KNOWN_OPPOSING_LIQUIDITY rather than substituting a future level.
+
+### 0B.8 Same-timestamp execution ambiguity
+
+Preserve source tick sequence when available. If deterministic sequence is unavailable, mark AMBIGUOUS_EXECUTION and do not invent intra-tick ordering.
+
+### 0B.9 Account-level risk aggregation
+
+MaxConcurrentPositions = 3 is not sufficient by itself.
+
+Also enforce:
+- MaxAggregateOpenWorstCaseRiskR
+- MaxDirectionalOpenWorstCaseRiskR
+
+Aggregate worst-case exposure includes all open trades plus declared execution buffers. No new trade is admitted when it would breach an aggregate ceiling.
+
+### 0B.10 External account-rule compliance
+
+The internal strategy 3R guard is a research risk budget, not a substitute for the target account's actual rule engine.
+
+The EA must implement AccountRuleEngine with:
+- DailyLossLimitAmount
+- MaximumLossLimitAmount
+- current balance
+- current equity
+- realized P/L
+- floating P/L
+- commissions/fees
+- reset timestamp
+- safety buffer
+- near-breach state
+- breach state
+
+For FundedNext, the selected account model must be configured because current official documentation distinguishes account models and includes open-position results in daily-loss calculations. The implementation must reproduce the selected model exactly rather than assuming a universal 3R rule.
+
+### 0B.11 News is a robustness dimension
+
+News proximity is first recorded, then tested as a separate robustness scenario. It is not presumed to improve the edge.
+
+Published high-frequency gold research reports swift and significant responses to major U.S. macroeconomic announcements and continued short-term volatility adjustment after FOMC shocks.
+
+### 0B.12 Filter-combination explosion control
+
+Core strategy Filter Matrix remains only:
+- A = HTF structure
+- B = Sweep quality
+- C = Target room
+
+The existing 8 combinations of A/B/C remain the core matrix.
+
+News and Spread/Execution Quality are separate robustness/gating dimensions and are not multiplied into the 8-way matrix by default.
+
+### 0B.13 No implementation discretion for missing formulas
+
+Before coding, the specification must contain exact formulas for pool geometry, penetration, reclaim, touch, freshness, target-room eligibility, TP/BE trigger basis, re-entry lifecycle, aggregate risk and account-rule compliance.
+
+A missing formula is SPEC-INCOMPLETE, not developer discretion.
+
+### 0B.14 Evidence boundary
+
+Evidence from FX and COMEX gold futures can support hypotheses about price-level reactions, stop-order clustering, volatility and announcement effects. It does not prove the same edge for XAUUSD CFD on the target broker.
+
+Osler's work supports intraday support/resistance turning-point hypotheses in FX; gold-futures studies support explicit treatment of intraday seasonality and announcement effects. These are hypothesis evidence, not validation of this EA.
+
+### 0B.15 Strategy decision trace
+
+Every candidate stores a reason-coded decision trace:
+- LEVEL_ELIGIBLE
+- POOL_MATCH
+- SWEEP_VALID
+- TOUCH_COUNT
+- ENTRY_MODE
+- FILTER_A
+- FILTER_B
+- FILTER_C
+- NEWS_STATE
+- SPREAD_STATE
+- RISK_STATE
+- ACCOUNT_RULE_STATE
+- FINAL_ADMISSION
+
+This makes every accepted/rejected candidate auditable without reconstructing logic from charts.
+
+### 0B.16 Price-source contract is frozen
+
+Baseline:
+SignalBarPriceSource = BID
+
+All bar-derived structure uses BID consistently. Choosing LAST in a future research version creates a new research version. Execution remains Bid/Ask-specific.
 
 # 1. Non-Negotiable Architecture Rules
 
