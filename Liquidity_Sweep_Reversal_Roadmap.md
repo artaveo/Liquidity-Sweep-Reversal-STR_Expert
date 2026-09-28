@@ -1229,7 +1229,7 @@ The next phase is allowed to proceed regardless of whether the event study looks
 
 ### 3.6 Early-stop / redesign rule
 
-Use only development/discovery observations. For both entry hypotheses A and B, calculate mean `EventStudyNetR` after declared transaction costs using the Primary Configuration's executable entry, LIVE_NATIVE_STOP and SingleTP=2R basis.
+Use only development/discovery observations. For both entry hypotheses A and B, calculate mean `EventStudyNetR` after declared transaction costs using the Primary Configuration's executable entry, LIVE_NATIVE_STOP and SingleTP=2R basis. Define `EventStudyNetR = RealizedNetPnL / PlannedRisk1R` for the event-study trade proxy; no BE and no re-entry are applied.
 
 Pre-register:
 - EarlyStopMinEventsPerHypothesis = 100
@@ -2005,7 +2005,7 @@ Must prove:
 - exact signal-close to next-tick execution
 - correct Bid/Ask opening and closing sides
 - exact event-tick spread capture
-- spread-insulated research stop behavior
+- primary broker-native stop behavior; MidPrice sensitivity is covered separately
 - exact TP/BE trigger behavior
 - no duplicate liquidity-pool trades
 - correct level consumption
@@ -2040,7 +2040,9 @@ Each fixture has an expected ledger and is a blocking test.
 
 Runtime invariants include:
 
-ReservedWorstCaseRiskR <= RemainingDailyRiskBudget
+ProjectedWorstCaseEquity >= DailyLossFloor
+AggregateWorstCaseRiskR <= MaxAggregateOpenWorstCaseRiskR
+DirectionalWorstCaseRiskR <= MaxDirectionalOpenWorstCaseRiskR
 ConsumedPool -> no duplicate same-event trade
 ConfirmedSwing -> no future information
 LivePositionState == BrokerReconciledPositionState
@@ -2208,12 +2210,11 @@ Exclude all of 2025.
 
 ## 8.6 Paired execution-profile robustness
 
-Evaluate the frozen strategy under:
+Primary profile: `LIVE_NATIVE_STOP`.
 
-1. RESEARCH_MID_STOP
-2. LIVE_NATIVE_STOP
+Sensitivity profile: `RESEARCH_MID_STOP`.
 
-No deployment decision may rely only on the research-only MidPrice trigger.
+The MidPrice profile is a robustness sensitivity only and cannot be the sole basis for acceptance or deployment.
 
 ## 8.7 Historical blind holdout audit
 
@@ -2435,7 +2436,7 @@ The project is complete only when:
 - XAUUSD strategy pip size is explicit
 - entry/SL/TP/BE are deterministic
 - RECLAIM_CLOSE and NEXT_BAR_EXTREME_CONFIRM have atomic lifecycle rules
-- research MidPrice stop and live broker-native stop are explicitly separated
+- LIVE_NATIVE_STOP is the primary execution profile and RESEARCH_MID_STOP is sensitivity only
 - PlannedRisk1R, RealizedStopLossR and ExecutionDeviationR are distinct
 - TP_PRICE_HIT and NET_TARGET_REACHED are distinct outcomes
 - gap-through and ambiguous timestamp execution are explicitly classified
