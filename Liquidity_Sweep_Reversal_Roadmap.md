@@ -1056,6 +1056,27 @@ If enabled, `ProfitTargetBasis = NET_EQUITY` and floating P/L is valued on execu
 It does not force-close existing positions.
 
 
+## 1.12 Phase 1 implementation closures (binding)
+
+Implementing Phase 1 exposed these gaps. Under 0B.13 each one is closed here, in the specification, and is not left to code discretion. Where these rules conflict with earlier Phase 1 wording, these rules win.
+
+1. **Run context.** In the Strategy Tester the EA runs as the Research Simulator and processes every TimeframeSet member, each with isolated state. On a live chart it runs as the Live Execution Adapter and processes only `LiveTimeframe`. The context is derived from the platform (`MQL_TESTER`) and cannot be changed by an input.
+2. **Broker session intervals.** A `SymbolInfoSessionTrade` interval whose end is at or before its start wraps midnight. It becomes `[from, 24:00)` on its weekday plus `[00:00, to)` on the next weekday. That next-day part is a continuation, not a new "session start", for `NextTradableSessionStart`. A zero-length interval is ambiguous and fails initialization.
+3. **Declared closed-market calendar.** Holidays and unscheduled closures are not in `SymbolInfoSessionTrade`. Input `ClosedMarketCalendarFile` (a Common-Files CSV, `start,end_exclusive,reason`, Broker Server Time, default empty) declares them before the run. Declared minutes are not `AuditEligibleMinute` and are excluded from `CriticalDataGap`. This file is the only permitted form of the "exception frozen before results are interpreted" in 1.4.
+4. **Audit range.** `AuditRequestedEndDate` is an inclusive broker date, so the audited range is `[StartDate 00:00, EndDate+1 00:00)`. Coverage mismatch means that processed ticks fall outside the declared range. The distance from the declared start to the first tick, and from the last tick to the declared end, is reported but is not by itself a gate.
+5. **Usable raw tick.** A raw tick is usable when Bid and Ask are finite, `Bid > 0`, `Ask > 0` and `Ask > Bid`. PotentialFallbackMinute is reported in three sub-classes: `NO_TICKS_NO_BAR` (no-tick/sparse data), `NO_TICKS_WITH_BAR` (potential tester fallback) and `RECONCILIATION_FAILED`. All three count toward `MaxFallbackMinuteShare`. M1 reconciliation compares the minute's open/high/low/close, built from the declared `SignalBarPriceSource`, with the M1 bar, using a tolerance of 0.5 × `SYMBOL_POINT`. A leading gap is measured from the declared start, and a trailing gap up to the audited end. The gate result is `AUDIT-INCOMPLETE` when a history copy fails or when no minute is eligible.
+6. **Signal-timeframe OHLC reconciliation.** Bars are built from processed usable ticks with the declared price source and compared with the platform bar when the bar closes. The first bar after initialization may be partial, so it is skipped and counted. The final open bar is not compared.
+7. **Worst-case sizing.** `ExecEntry` = admission quote plus the configured adverse entry slippage. `DeclaredRiskExecutionBufferPoints` is applied to the stop-exit leg (SL − buffer for a long, SL + buffer for a short). `WorstCaseLossPerLot = loss(ExecEntry → buffered SL) + opening commission per lot`. The volume is floored to the step and capped at the maximum. A volume below the minimum is rejected. The volume is reduced (floored) to the available margin, and rejected if that leaves it below the minimum. `RESEARCH_MID_STOP` sizing stays SPEC-INCOMPLETE until 4.5's stop-execution spread buffer has a declared value.
+8. **Commission.** The published formula is applied unrounded. For the published example it gives 7.145952, while the page quotes $7.14; the page's rounding convention is not specified.
+9. **Currency contract.** `AccountCurrency` must equal the account/tester deposit currency and the symbol's profit currency. No conversion rule is specified, so any mismatch fails initialization.
+10. **Stress values.** Slippage legs accept only {0, 1, 2, 5} points, and `FIXED_ADVERSE_POINTS` needs at least one non-zero leg. Latency `FIXED_MS` accepts only {100, 250, 500} ms, and the delay adds to the decision time before the first executable tick is chosen. Any other value fails initialization.
+11. **Entry cost gate.** A violation means the value is strictly greater than the frozen maximum. `KnownNonSpreadCostR` = known admission-time non-spread cost (commission plus declared slippage cost) ÷ PlannedRisk1R currency.
+12. **Account rules.** `DailyNetResult` inputs are signed P/L amounts. The live adapter uses BUY/SELL deals since the reset for closed, commission, swap and fee amounts, and `POSITION_PROFIT + POSITION_SWAP` for floating P/L; each amount is counted once. An actual floor crossing latches `BREACH` for the rest of the run.
+13. **Admission.** Every gate is evaluated and traced. The first failure is reported in this fixed order: account-rule breach, account-rule near-breach, daily profit target, max concurrent positions, directional position cap, daily loss floor, aggregate ceiling, directional ceiling. An open trade's incremental worst-case loss is clamped at ≥ 0. Ceilings are compared as `≤ ceiling`, the floor as `≥ floor`, and the profit target blocks new entries when the result is `≥ target`.
+14. **Optional guards.** Enabling `MaxTotalDrawdownEnabled` or `MaxConsecutiveLossGuardEnabled` fails initialization as SPEC-INCOMPLETE until Phase 5 defines their peak/R/reset formulas. `DirectionalPositionCap` counts open Long and Short positions separately and rejects when the count is already ≥ `MaxDirectionalPositions`.
+15. **Output package.** The EA writes to `Common\Files\LSR\<ExperimentId>\` (ExperimentId: 1–64 characters, letters, digits, `-`, `_` or `.`). Files are written as UTF-8 without a BOM, and `manifest.json` is written last with the SHA-256 of every other file. Phase 1 has no ledger, so `ledger_checksum` is `null`.
+
+
 ## Phase 1 Gate
 
 **Logic:** Phase 1 is a specification-completeness gate as well as an implementation gate. No later strategy phase may begin while a Phase-1 behavior still requires developer interpretation.
@@ -1076,6 +1097,20 @@ Complete only when all of the following are frozen and reproducible:
 ### Required output
 
 Data-quality report, symbol/session snapshot, cost/execution contract, AccountRule profile snapshot, DataManifest schema, exact Inputs/Run Card, and blocking-test status. No strategy-selection decision is made here.
+
+### Phase 1 completion record
+
+`Phase 1 — IMPLEMENTED (Gate pending: blocking-test run and rapid-sample smoke packet)`
+
+`Date: 2026-09-28`
+
+`Files changed: added .gitignore; MQL5/Include/LiquiditySweepReversal/{LSR_Types,LSR_Json,LSR_Timeframes,LSR_BrokerTime,LSR_Sessions,LSR_SymbolSpec,LSR_Quote,LSR_Costs,LSR_Sizing,LSR_AccountRules,LSR_RiskAdmission,LSR_DataAudit,LSR_Manifest,LSR_Phase1}.mqh; MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5; MQL5/Scripts/LiquiditySweepReversal/{LSR_Phase1_Tests,LSR_RawTickAudit}.mq5; docs/Phase1_RunCard.md; docs/DataManifest.schema.json. Modified: Liquidity_Sweep_Reversal_Roadmap.md (1.12, this record, update log). Removed: none.`
+
+`Summary: Adds a non-trading Phase 1 contract library and EA. They cover TimeframeSet/LiveTimeframe, broker-time sessions (Modes 1/2/3), price units, the Bid/Ask quote model, commission/slippage/latency, the spread/cost gate, stress-aware sizing, daily and aggregate/directional risk admission, and the FundedNext AccountRuleEngine. The EA also runs the raw-tick and OHLC data audit with PFM/critical-gap gates and writes the DataManifest run package.`
+
+`Compile/Tests: MetaEditor 5.0.0.6182: LSR_Expert, LSR_Phase1_Tests and LSR_RawTickAudit each compiled with 0 errors, 0 warnings. The blocking test script is written but has not been executed yet. The rapid-sample smoke run (docs/Phase1_RunCard.md) has not been executed. Phase 1 becomes COMPLETE only after both pass.`
+
+`Blocking limitations: an MT5 script and a tester run need a connected terminal. The Phase 1 Gate packet must come from the FundedNext XAUUSD real-tick run.`
 # Phase 2 — Liquidity Model, Exact Sweep Events & Python Reference Foundation
 
 ## Goal
@@ -2732,6 +2767,12 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-28 — Phase 1 implementation
+
+- Implemented the Phase 1 contract as a non-trading MQL5 library, EA, blocking-test script and raw-tick audit script. Added the Run Card (`docs/Phase1_RunCard.md`) and the DataManifest schema (`docs/DataManifest.schema.json`).
+- Added 1.12 "Phase 1 implementation closures". These close the gaps found during implementation: run context, wrapped sessions, the declared closed-market calendar, audit range and tick usability, sizing buffer placement, commission rounding, the currency contract, stress-value validation, cost-gate boundaries, account-rule components/latching, admission precedence, and SPEC-INCOMPLETE optional guards.
+- Phase 1 status: IMPLEMENTED; gate pending the blocking-test run and the rapid-sample smoke packet.
 
 ## Update 2026-09-28 — Phase 1 specification-completeness closure
 

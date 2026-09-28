@@ -1,0 +1,94 @@
+//+------------------------------------------------------------------+
+//| LSR_RawTickAudit.mq5                                             |
+//| Phase 1 raw real-tick audit OUTSIDE the Strategy Tester          |
+//| (roadmap 1.4). Reads the terminal's own tick history with        |
+//| CopyTicksRange and M1 bars with CopyRates over the declared      |
+//| range, applies the same PotentialFallbackMinute / CriticalDataGap|
+//| definitions and gates as the EA, and writes                      |
+//| Common\Files\LSR\<ExperimentId>\raw_tick_audit_*.                |
+//| Run on a chart of the audited symbol. No trading.                |
+//+------------------------------------------------------------------+
+#property copyright   "Liquidity Sweep Reversal"
+#property version     "1.00"
+#property description "Phase 1 raw real-tick audit (no trading)"
+#property script_show_inputs
+
+#include "../../Include/LiquiditySweepReversal/LSR_Phase1.mqh"
+
+input string                InpExperimentId             = "LSR-P1-SMOKE"; // ExperimentId
+input datetime              InpAuditRequestedStartDate  = D'2026.01.01';  // AuditRequestedStartDate
+input datetime              InpAuditRequestedEndDate    = D'2026.06.30';  // AuditRequestedEndDate (inclusive)
+input string                InpClosedMarketCalendarFile = "";             // ClosedMarketCalendarFile (Common\Files CSV)
+input ENUM_LSR_PRICE_SOURCE InpSignalBarPriceSource     = LSR_PRICE_BID;  // SignalBarPriceSource
+
+CLSR_SessionSchedule g_sched;
+CLSR_ClosureCalendar g_calendar;
+CLSR_RawTickAudit    g_audit;
+CLSR_RawAuditDriver  g_driver;
+
+void OnStart(void)
+  {
+   string err;
+   if(!LSR_ValidateExperimentId(InpExperimentId, err))
+     {
+      Print("LSR raw audit: ", err);
+      return;
+     }
+   if(!g_sched.LoadFromSymbol(_Symbol, err) || !g_calendar.LoadCsv(InpClosedMarketCalendarFile, err))
+     {
+      Print("LSR raw audit: ", err);
+      return;
+     }
+   datetime start = LSR_BrokerDayStart(InpAuditRequestedStartDate);
+   datetime endEx = LSR_BrokerDayStart(InpAuditRequestedEndDate) + LSR_SECONDS_PER_DAY;
+   if(endEx <= start)
+     {
+      Print("LSR raw audit: end date before start date");
+      return;
+     }
+   datetime now = TimeCurrent();
+   if(endEx > now)
+      endEx = now - (now % 60);
+
+   double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   g_audit.Init(GetPointer(g_sched), GetPointer(g_calendar), InpSignalBarPriceSource, point, start, endEx,
+                "TERMINAL_CopyTicksRange_COPY_TICKS_ALL");
+   g_driver.Init(_Symbol, GetPointer(g_audit));
+
+   int chunks = 0;
+   for(datetime from = start; from < endEx && !IsStopped(); from += 3600)
+     {
+      datetime to = MathMin(from + 3600, endEx);
+      g_driver.AuditChunk(from, to);
+      if(++chunks % 240 == 0)
+         Comment(StringFormat("LSR raw audit: %s", LSR_IsoTime(to)));
+     }
+   g_audit.Finalize();
+   Comment("");
+
+   CLSR_RunOutput out;
+   out.Init(InpExperimentId);
+   CLSR_Json j;
+   j.BeginObject();
+   j.KStr("contract_id", LSR_PHASE1_CONTRACT_ID);
+   j.KStr("symbol", _Symbol);
+   j.KStr("broker_company", AccountInfoString(ACCOUNT_COMPANY));
+   j.KStr("broker_server", AccountInfoString(ACCOUNT_SERVER));
+   j.KInt("mt5_build", TerminalInfoInteger(TERMINAL_BUILD));
+   j.KStr("server_time_basis", LSR_SERVER_TIME_BASIS);
+   j.Key("trading_session_schedule");
+   g_sched.WriteJson(j);
+   j.Key("declared_closed_market_calendar");
+   g_calendar.WriteJson(j);
+   j.Key("raw_real_tick_audit");
+   g_audit.WriteJson(j);
+   j.EndObject();
+   out.Write("raw_tick_audit_report.json", j.Text());
+   out.Write("raw_tick_audit_fallback_minutes.csv", g_audit.FallbackCsv());
+   out.Write("raw_tick_audit_critical_gaps.csv", g_audit.GapsCsv());
+
+   PrintFormat("LSR raw audit %s: %s  eligible=%I64d fallback=%I64d share=%s gaps=%I64d -> Common\\Files\\%s",
+               _Symbol, LSR_DataGateName(g_audit.Gate()), g_audit.EligibleMinutes(), g_audit.FallbackMinutes(),
+               LSR_NumStr(g_audit.FallbackShare(), 6), g_audit.CriticalGapCount(), out.Dir());
+  }
+//+------------------------------------------------------------------+
