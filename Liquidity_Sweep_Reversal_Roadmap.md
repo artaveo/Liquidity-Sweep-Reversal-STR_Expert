@@ -1270,18 +1270,24 @@ Do not advance to Phase 4 until both hypothesis outputs have been received and t
 
 ### 3.6 Early-stop / redesign rule
 
-Use only development/discovery observations. For both entry hypotheses A and B, calculate mean `EventStudyNetR` after declared transaction costs using the Primary Configuration's executable entry, LIVE_NATIVE_STOP and SingleTP=2R basis. Define `EventStudyNetR = RealizedNetPnL / PlannedRisk1R` for the event-study trade proxy; no BE and no re-entry are applied.
+Use only development/discovery observations. Evaluate this rule **separately for each selected timeframe in `TimeframeSet`**. For each timeframe, and for both entry hypotheses A and B, calculate mean `EventStudyNetR` after declared transaction costs using that timeframe's executable entry, LIVE_NATIVE_STOP and SingleTP=2R basis. Define `EventStudyNetR = RealizedNetPnL / PlannedRisk1R` for the event-study trade proxy; no BE and no re-entry are applied.
 
 Pre-register:
 - EarlyStopMinEventsPerHypothesis = 100
 - EarlyStopMinIndependentDevelopmentDays = 20
 - EarlyStopConfidenceLevel = 95%
 
-For each hypothesis, compute the one-sided 95% bootstrap upper confidence bound for mean `EventStudyNetR`.
+For each timeframe and hypothesis, compute the one-sided 95% bootstrap upper confidence bound for mean `EventStudyNetR`.
 
-When both sample minima are met and both hypotheses have `Upper95CI(mean EventStudyNetR) < 0`, classify the study as `STOP_EARLY_REDESIGN` and do not proceed to Phase 4 until the strategy design is reconsidered and the new study state is frozen.
+For an individual timeframe, when both sample minima are met and both hypotheses have `Upper95CI(mean EventStudyNetR) < 0`, classify **that timeframe only** as `STOP_EARLY_REDESIGN` and remove it from the active research set. All other selected timeframes continue under their own independent state.
 
-Otherwise continue. This is a project-efficiency gate, not proof of profitability.
+A timeframe that fails to reach either minimum sample requirement is **not removed** and is classified `INCONCLUSIVE` for this gate.
+
+The overall project is classified `STOP_EARLY_REDESIGN` only when **all selected timeframes** have been removed by their own timeframe-level `STOP_EARLY_REDESIGN` decision.
+
+Transactions, positions, risk state, equity, drawdown, event ledger and trade ledger remain independent by timeframe. No result, sample, or state is combined across timeframes for the early-stop decision.
+
+This is a project-efficiency gate, not proof of profitability.
 
 ### 3.7 Reversal vs continuation classification
 
@@ -2557,6 +2563,11 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-28 — Timeframe-specific early-stop gate
+
+- Applied the Early-stop / redesign rule independently per selected timeframe; only timeframes meeting STOP_EARLY_REDESIGN are removed, while INCONCLUSIVE timeframes remain active. The whole project stops only if all selected timeframes are removed.
+
 
 ## Update 2026-09-28 — Timeframe, exit-policy and phase-gate expansion
 
