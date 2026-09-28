@@ -1,9 +1,9 @@
-# Liquidity Sweep Reversal — Extended Implementation & Research Roadmap
+# Liquidity Sweep Reversal — Implementation & Research Roadmap
 
 **Document name:** `Liquidity_Sweep_Reversal_Roadmap.md`  
-**Status:** V3 STRATEGY-LOGIC HARDENED SPEC — research + production-architecture ready  
+**Status:** FINAL ROADMAP — implementation-ready research and production specification  
 **Research audit date:** 2026-09-28  
-**V3 design score:** 8.9/10 for methodology/architecture and deterministic strategy specification when implemented exactly; profitability remains unvalidated  
+**Design audit:** 9.1/10 for methodology, architecture and deterministic strategy specification when implemented exactly; strategy profitability remains unvalidated  
 **Baseline symbol:** XAUUSD  
 **Baseline broker context:** FundedNext / MT5  
 **Baseline signal timeframe:** M1  
@@ -20,7 +20,7 @@
 
 # 0. Research Decisions Locked Before Implementation
 
-## 0A. V2 HARDENING — BINDING OVERRIDES
+## 0A. Research & Governance — Binding Rules
 
 Where this section conflicts with an earlier sentence, this section wins.
 
@@ -57,7 +57,7 @@ The selection rule must be frozen before OOS:
 3. if tied, prefer lower tail risk/drawdown under the declared stress set;
 4. use untouched OOS NetR only as the final tie-breaker.
 
-A new material candidate after results are seen creates a new research version and restarts the holdout process.
+A material candidate introduced after results are seen reopens the holdout process. The single roadmap file is preserved; research state is identified by Git commit, DataManifest and experiment identifiers.
 
 ### 0A.3 Research / live separation
 
@@ -81,14 +81,14 @@ PDH/PDL, session extremes, swings and equal highs/lows are **price-level proxies
 - 2025-01-01 → 2025-12-31 = untouched historical OOS
 - 2026-09-29 → onward = true forward validation
 
-A material rule change after discovery/development starts a new research version and invalidates the prior OOS selection process.
+A material rule change after discovery/development reopens the holdout process and invalidates the prior OOS selection process. The roadmap remains this same file.
 
 ### 0A.6 Reproducibility
 
 Every run produces a DataManifest containing code SHA, roadmap hash, MT5 build, broker/server, account-rule profile, symbol specification, requested/actual range, tick source and fallback coverage, server-time basis, cost/slippage/latency model, scenario IDs, declared trial count, random seeds and ledger checksum.
 
 
-This section records the decisions that were added/changed after the external review. They are not suggestions for the implementation phase; they are part of the specification.
+This section records the binding governance decisions established by the audit. They are part of the specification, not suggestions for implementation.
 
 ## 0.1 What is supported by evidence
 
@@ -145,7 +145,7 @@ Unpredictable future market gaps or execution deviations cannot be mathematicall
 
 ---
 
-## 0B. V3 STRATEGY-LOGIC HARDENING — BINDING OVERRIDES
+## 0B. Strategy Logic — Binding Rules
 
 This section closes the remaining strategy-definition loopholes. Where it conflicts with earlier strategy wording, this section wins.
 
@@ -334,7 +334,7 @@ This makes every accepted/rejected candidate auditable without reconstructing lo
 Baseline:
 SignalBarPriceSource = BID
 
-All bar-derived structure uses BID consistently. Choosing LAST in a future research version creates a new research version. Execution remains Bid/Ask-specific.
+All bar-derived structure uses BID consistently. Choosing LAST in a future research study state creates a new research version. Execution remains Bid/Ask-specific.
 
 ### 0B.17 Confirmation lifecycle is atomic
 
@@ -370,7 +370,209 @@ Every candidate receives a stable EventID independent of scenario. Scenario repo
 
 Cost burden is decomposed into entry spread, exit spread, commission, swap, slippage and gap deviation. A single aggregate cost field must not replace these components.
 
-# 1. Non-Negotiable Architecture Rules
+## 0C. Final Strategy / Execution / Risk Closures
+
+These rules close the remaining material loopholes found during the final audit. Where they conflict with any earlier wording, these rules win.
+
+### 0C.1 Frozen Primary Research Configuration
+
+The project must have one explicit baseline configuration before any untouched holdout interpretation. It is a reference hypothesis, not a claim that it is the most profitable configuration.
+
+- Symbol = XAUUSD
+- SignalTimeframe = M1
+- SignalBarPriceSource = BID
+- LiquiditySourceProfile = ALL_FOUR (PDH/PDL, Previous Session H/L, Confirmed Swings, Equal Highs/Lows)
+- EntryMode = RECLAIM_CLOSE
+- SingleTP = 2R
+- BreakEven = OFF
+- Filters A/B/C = OFF
+- NewsPolicy = OBSERVE_ONLY
+- Spread/Cost Gate = ON
+- MaxEntrySpreadStrategyPips = 3.0
+- MaxEntrySpreadToInitialRiskPct = 25%
+- MaxEntryCostR = 0.10R
+- ReEntryAttempts = 1
+- MaxOpenPositionsPerLiquidityPool = 1
+- MaxConcurrentPositions = 3
+- MaxAggregateOpenWorstCaseRiskR = 3.0R
+- MaxDirectionalOpenWorstCaseRiskR = 2.0R
+- DailyLossGuard = ON at 3.0R
+- DailyProfitTarget = OFF
+- TimeExit = OFF
+- ScenarioInvalidationExit = OFF
+- SameBarOppositeSweepPolicy = NO_TRADE_ON_CONFLICT
+- MultiPoolSweepPolicy = FIRST_CROSSED_LEVEL
+
+The Full Matrix and robustness scenarios are research experiments around this frozen baseline. They are never treated as simultaneous live configurations.
+
+### 0C.2 Level-instance identity and immutable pool membership
+
+Every level instance has a stable identity built from its source type, source-instance timestamp/date, polarity and price.
+
+A liquidity pool is immutable after it becomes armed for trade evaluation. Later-confirmed levels may form a new pool instance; they may not retroactively widen, narrow or rewrite an already-armed pool.
+
+### 0C.3 Same-polarity equal-level rule
+
+Equal Highs may cluster only confirmed highs; Equal Lows may cluster only confirmed lows.
+
+A cluster requires:
+- at least two distinct confirmed swing instances;
+- different confirmation timestamps;
+- the declared within-band tolerance;
+- no use of a single swing instance twice.
+
+No same-candle dual-pivot shortcut is permitted.
+
+### 0C.4 Exact opening-boundary policy
+
+High-side sweep: PreviousBarClose < PoolLower and SweepOpen < PoolLower.
+Low-side sweep: PreviousBarClose > PoolUpper and SweepOpen > PoolUpper.
+
+A sweep candle opening exactly on the liquidity boundary is classified OPEN_ON_LIQUIDITY and rejected.
+
+This overrides the earlier <= / >= boundary wording.
+
+### 0C.5 Partial-pool penetration is observed but not traded
+
+A candle that penetrates only part of a pooled band is recorded as PARTIAL_POOL_SWEEP.
+
+It is not a valid baseline trade event. This keeps near-valid opportunities visible for later hypothesis testing without silently changing the core definition.
+
+### 0C.6 Opposite-direction conflict policy
+
+If the same SignalTimeframe candle creates valid high-side and low-side sweep events that would produce opposite-direction setups, the baseline takes no trade from that candle and records CONFLICTING_SWEEP_SAME_BAR.
+
+A later implementation with a reliable tick-sequence basis may report the sequence, but it may not silently replace the frozen baseline rule.
+
+### 0C.7 Confirmation and pending-setup conflict
+
+For NEXT_BAR_EXTREME_CONFIRM, only the single immediately following candle can confirm.
+
+If the confirmation candle independently creates an opposite-direction sweep, the pending setup expires with CONFIRMATION_CONFLICT. A failed confirmation never reopens.
+
+### 0C.8 Per-pool concurrency and re-entry lifecycle
+
+Only one live position may be open against one liquidity-pool instance at a time.
+
+A stop-loss exit may unlock one new attempt only after a new valid sweep event of the same pool instance.
+
+TP, BE stop, time exit or invalidation exit terminates that setup lifecycle. A fresh setup requires a new valid sweep event.
+
+### 0C.9 Canonical daily-risk admission
+
+DayRiskUnitCurrency = StartOfBrokerDayEquity × RiskPerTradePercent.
+
+DailyLossFloor = StartOfBrokerDayEquity − (MaxDailyLossR × DayRiskUnitCurrency).
+
+For an already-open trade, calculate only the incremental loss from the current executable quote to its currently valid stop plus declared stress buffers. Do not subtract the full original risk a second time from current equity.
+
+For a proposed trade:
+ProjectedWorstCaseEquity = CurrentEquity − Σ IncrementalWorstCaseOpenLoss − NewTradeWorstCaseLoss.
+
+Admission requires ProjectedWorstCaseEquity >= DailyLossFloor, plus all aggregate-risk and external AccountRuleEngine gates.
+
+This supersedes the earlier shortcut based only on realized daily R.
+
+### 0C.10 Stress-aware position sizing
+
+Position size is solved against the declared worst-case loss budget, including the native executable stop path and declared adverse execution buffers. It must not size solely from ideal entry-to-stop geometry and then add slippage afterward.
+
+### 0C.11 Exact signal-close to executable-tick rule
+
+When an entry is defined at bar close, execution uses the first executable tick at or after the completed bar-close timestamp.
+
+Record SignalCloseTimestamp, FirstExecutableTickTimestamp and SignalToEntryDelaySeconds.
+
+A later tick caused by a market closure is not treated as an immediate bar-close fill; normal session/risk gates still apply.
+
+### 0C.12 Exact time-exit indexing
+
+When MaxHoldingBars = N, and entry occurs on the first executable tick after bar B closes, the time exit is evaluated on the first executable tick after bar B+N closes.
+
+N = 1 means one full completed signal bar after entry.
+
+### 0C.13 Scenario invalidation exit
+
+Baseline: ScenarioInvalidationExit = OFF.
+
+Research-only variant: Long invalidates when a completed SignalTimeframe bar closes at or below PoolUpper; Short invalidates when a completed SignalTimeframe bar closes at or above PoolLower.
+
+Execution occurs on the first executable tick after that bar close. The variant is tested separately.
+
+### 0C.14 Exact MAE/MFE definitions
+
+Long: MFE = max(Bid_t − EntryAsk); MAE = max(EntryAsk − Bid_t, 0).
+Short: MFE = max(EntryBid − Ask_t); MAE = max(Ask_t − EntryBid, 0).
+
+Evaluate only from entry to final exit. Also report MFE_R and MAE_R against PlannedRisk1R.
+
+### 0C.15 Minimum independent sample
+
+Inferential acceptance requires both MinTradesForInferentialStats >= 200 and MinIndependentTradingDays >= 60.
+
+Block bootstrap/resampling is performed at day/session level where practical so clustered intraday trades are not treated as independent observations.
+
+### 0C.16 Level-age policy
+
+No hidden age cutoff may be added to improve apparent performance.
+
+Baseline eligibility is determined by source-specific lifecycle and freshness. An implementation memory cap is permitted only if it is proven not to alter the eligible event set.
+
+### 0C.17 Closed-session, holiday and Monday-gap behavior
+
+Existing positions may remain open across a non-trading interval unless the selected account/risk policy forbids it.
+
+At reopen, gaps through stops/targets are classified GAP_CROSSED_BARRIER, use the declared conservative gap-execution rule, and are separately reported. No new trade is admitted merely because a closed-market gap touched a level.
+
+### 0C.18 Deterministic HTF structure filter
+
+Bullish HTF structure requires LatestHigh > PriorHigh and LatestLow > PriorLow using the latest two confirmed highs/lows. Bearish requires LatestHigh < PriorHigh and LatestLow < PriorLow. Otherwise = NEUTRAL.
+
+No unconfirmed HTF swing participates.
+
+### 0C.19 Prominence is diagnostic unless separately pre-registered
+
+SwingProminence is not an implicit filter.
+
+A prior-known diagnostic may use PriorOppositeSwingDistanceATR = abs(CurrentSwingPrice − NearestPriorConfirmedOppositeSwingPrice) / ATR_at_confirmation. If none exists, store NA. Future swings may not be used for live eligibility.
+
+### 0C.20 Cost-neutral BE reference
+
+Break-even uses a declared executable-price basis and solves the stop price that offsets known deterministic entry costs and commission under the selected accounting model. Future unknown swap and future execution deviation are excluded and recorded separately.
+
+If the computed BE stop violates broker stop/freeze constraints, the BE transition is rejected and logged rather than silently rounded.
+
+### 0C.21 Barrier-ordering rule
+
+If TP and SL are both crossed by the same observed tick and source sequence cannot determine which barrier was first, classify AMBIGUOUS_EXECUTION and apply the pre-registered conservative rule.
+
+OHLC-only assumptions may not manufacture intra-bar order.
+
+### 0C.22 One permanent roadmap file
+
+The permanent roadmap filename is Liquidity_Sweep_Reversal_Roadmap.md.
+
+Future updates append to the Roadmap Update Log. The roadmap is not renamed to current, current, current, etc. Reproducibility uses Git commit SHA, file hash, DataManifest and experiment IDs.
+
+## Phase Map — One Logical Work Package Per Chat
+
+The roadmap is split into 9 medium-sized phases. Each is a coherent, testable work package suitable for one dedicated chat without turning the program into dozens of tiny tasks.
+
+| Phase | Work package | Main dependency |
+|---|---|---|
+| 1 | Data, time, symbol and execution contract | None |
+| 2 | Pre-implementation event study and hypothesis measurement | Phase 1 |
+| 3 | Liquidity sources, pooling, lifecycle and sweep events | Phases 1–2 |
+| 4 | Entry, SL, TP, BE, re-entry and trade lifecycle | Phase 3 |
+| 5 | Strategy filters and optional risk extensions | Phase 4 |
+| 6 | Single-pass backtest, scenario engine, ledger and reporting | Phases 3–5 |
+| 7 | Deterministic validation, reference reconciliation and statistical tests | Phase 6 |
+| 8 | Robustness, freeze, development and historical holdout | Phase 7 |
+| 9 | Production hardening, shadow/demo and true forward validation | Phase 8 |
+
+**Chat boundary rule:** each chat works only on its assigned phase and its declared outputs. A later phase may consume earlier outputs but must not silently rewrite earlier strategy rules.
+
+# Non-Negotiable Architecture Rules
 
 These rules apply to every phase.
 
@@ -395,11 +597,11 @@ These rules apply to every phase.
 
 ---
 
-# Phase 1 — Data Contract, Quality Audit, Event Study & Research Foundation
+# Phase 1 — Data, Time, Symbol & Execution Contract
 
 ## Goal
 
-Test whether the core sweep hypothesis has measurable behavior before building a large execution/scenario engine, while simultaneously establishing the exact market-data, time, cost, risk, and symbol contract required by later phases.
+Establish the exact, reproducible market-data and broker/execution contract consumed by every later phase. This phase does not build the strategy itself.
 
 ## 1.1 Signal timeframe
 
@@ -625,41 +827,16 @@ The final volume is rounded **down to the legal volume step** so the requested r
 
 Inputs:
 
-`DailyLossGuardEnabled = true`
+DailyLossGuardEnabled = true
 
-`MaxDailyLossR = 3.0`
+MaxDailyLossR = 3.0
 
-`MaxConcurrentPositions = 3`
+MaxConcurrentPositions = 3
 
-The daily guard is a **new-risk admission guard**, not a floating-loss forced exit.
+The daily guard is a new-risk admission guard, not a floating-loss forced exit. The canonical admission calculation is the incremental worst-case equity method defined in 0C.9, and the external AccountRuleEngine takes precedence.
 
-It is an internal strategy budget and does not replace the external AccountRuleEngine. For compliance, the external account-rule engine takes precedence.
+Admission must satisfy the projected daily-loss floor and the aggregate/directional worst-case exposure ceilings. Floating P/L alone does not force-close an existing position.
 
-Before any new position:
-
-`RemainingDailyRiskR = MaxDailyLossR + RealizedNetDailyR - ReservedWorstCaseOpenRiskR`
-
-A trade is admitted only when:
-
-`NewTradeWorstCaseRiskR <= RemainingDailyRiskR`
-
-and:
-
-`OpenPositions < MaxConcurrentPositions`
-
-Examples:
-
-0R realized loss → up to three 1R positions may be open.
-
--1R realized loss → at most 2R new worst-case daily risk may be admitted.
-
--2R realized loss → at most 1R remains.
-
--3R realized loss → no new entry.
-
-Floating P/L alone does not close an existing position.
-
-The three currently open positions are allowed to finish through their normal exit rules.
 
 ## 1.10 Optional additional risk controls
 
@@ -697,7 +874,21 @@ If enabled, `ProfitTargetBasis = NET_EQUITY` and floating P/L is valued on execu
 
 It does not force-close existing positions.
 
-## 1.12 Pre-implementation event study
+
+## Phase 1 Gate
+
+Complete only when the requested historical range, real-tick/fallback coverage, broker server-time basis, symbol specification, Bid/Ask quote model, cost model, spread gate, sizing constraints and canonical daily-risk admission inputs are fully measurable and reproducible.
+
+### Required output
+
+Data-quality report, symbol/session snapshot, cost/execution contract, and DataManifest schema. No strategy-selection decision is made here.
+# Phase 2 — Pre-Implementation Event Study & Hypothesis Measurement
+
+## Goal
+
+Measure the raw sweep/reclaim hypothesis on the experimental range before the full trade engine is treated as finished. This isolates whether the event definition deserves deeper implementation work.
+
+## 2.1 Pre-implementation event study
 
 Before the full strategy execution engine is considered complete, run a lightweight event study over the experimental range:
 
@@ -732,7 +923,7 @@ The objective is diagnostic:
 
 This is not used to optimize dozens of parameters.
 
-## 1.13 Event-study control vs confirmation
+## 2.2 Event-study control vs confirmation
 
 The event study must compare exactly two pre-registered entry hypotheses:
 
@@ -758,7 +949,7 @@ For a Long:
 
 No third confirmation pattern is introduced in the base research.
 
-## 1.14 Macro-event and spread observability
+## 2.3 Macro-event and spread observability
 
 News is first a stratification variable, not an assumed predictive edge.
 
@@ -773,7 +964,7 @@ A blocking mode is allowed only when the event-calendar source, timestamp basis,
 
 Spread is separately reported by bucket even when the spread filter is OFF.
 
-## 1.15 Development event-study replication
+## 2.4 Development event-study replication
 
 Repeat the lightweight event study over 2020-07-01 → 2024-12-31 with 2025 excluded. This tests whether the raw sweep/reclaim behavior is unique to the 2026 discovery sample.
 
@@ -781,7 +972,7 @@ No optimization is allowed.
 
 The event study also reports fixed forward horizons such as 1, 3, 5, 10 and 20 completed bars, plus first-barrier outcomes when valid stop/target references exist. Horizon definitions are frozen before analysis.
 
-## 1.16 Phase-1 foundation gate
+## 2.5 Phase-1 foundation gate
 
 The event study does not declare the strategy profitable.
 
@@ -809,13 +1000,17 @@ The next phase is allowed to proceed regardless of whether the event study looks
 
 ---
 
-# Phase 2 — Liquidity Model, Level Lifecycle & Sweep Definition
+## Phase 2 Gate
+
+The event-study dataset must be complete, reproducible, and split into clearly labeled control/confirmation hypotheses with no use of 2025 holdout information.
+
+# Phase 3 — Liquidity Model, Level Lifecycle & Sweep Definition
 
 ## Goal
 
-Build all four requested liquidity source types and remove ambiguity around what constitutes a valid sweep.
+Build the deterministic market-structure/event layer: four liquidity proxy sources, pool geometry, clustering, level lifecycle, touch counting and exact sweep events.
 
-## 2.1 Liquidity source types
+## 3.1 Liquidity source types
 
 All four exist as independent Inputs. They are price-level proxies, not direct order-book observations:
 
@@ -830,7 +1025,7 @@ Baseline does not add Asia/London/weekly/monthly/round-number sources to the cor
 
 The Liquidity Source architecture must remain extensible so those sources can be added later without rewriting the detector.
 
-## 2.2 Previous Day High/Low
+## 3.2 Previous Day High/Low
 
 The level comes from the previous fully completed broker-time day.
 
@@ -840,7 +1035,7 @@ Once the day closes:
 
 They do not move during the next trading day.
 
-## 2.3 Previous Session High/Low
+## 3.3 Previous Session High/Low
 
 Default liquidity session:
 
@@ -854,7 +1049,7 @@ The previous fully completed session supplies:
 
 Session definition is independently configurable.
 
-## 2.4 Confirmed Swing High/Low
+## 3.4 Confirmed Swing High/Low
 
 Defaults:
 
@@ -876,7 +1071,7 @@ No future information may affect the earlier signal.
 
 The engine must also store `SwingProminence` for every swing so later research can evaluate whether trivial swings behave differently from larger structural swings.
 
-## 2.5 Equal Highs/Lows
+## 3.5 Equal Highs/Lows
 
 Default:
 
@@ -890,7 +1085,7 @@ At least two confirmed swing points inside the tolerance form an Equal High/Low 
 
 The source points are retained in the ledger.
 
-## 2.6 Liquidity clustering
+## 3.6 Liquidity clustering
 
 If multiple liquidity sources occur within the clustering tolerance, they are one Liquidity Pool.
 
@@ -902,7 +1097,7 @@ must not produce three independent setups at essentially the same price.
 
 The ledger retains all source tags.
 
-## 2.6A Multi-pool sweep policy
+## 3.6A Multi-pool sweep policy
 
 A single large candle can cross multiple non-clustered price-level proxies. The engine must not silently create multiple trades from one candle.
 
@@ -916,7 +1111,7 @@ DEEPEST_PENETRATION_LEVEL
 
 Only one policy is active per scenario and the policy ID is stored in the ledger.
 
-## 2.6B Equal-level tolerance modes
+## 3.6B Equal-level tolerance modes
 
 Baseline:
 
@@ -924,7 +1119,7 @@ EqualLevelToleranceMode = FIXED_PIPS
 
 ATR_NORMALIZED may exist only as a separately declared research variant and may not be chosen after observing results.
 
-## 2.7 Level lifecycle
+## 3.7 Level lifecycle
 
 Each liquidity level/pool has a lifecycle state:
 
@@ -940,7 +1135,7 @@ A successful sweep consumes that specific level instance so the same physical po
 
 A new day/session/newly confirmed swing creates a new level instance.
 
-## 2.8 Pre-sweep touches
+## 3.8 Pre-sweep touches
 
 A first-touch requirement is **not hard-coded into the baseline**, because existing evidence does not justify a universal claim that first touch is always superior.
 
@@ -960,7 +1155,7 @@ and report performance stratified by:
 
 An optional research input may later cap the permitted touch count, but the baseline engine must not silently reject repeated tests.
 
-## 2.9 Exact Sweep Definition
+## 3.9 Exact Sweep Definition
 
 ### Buy-side Sweep → Short
 
@@ -988,7 +1183,7 @@ The sweep candle must satisfy:
 
 A candle that opens already below the level is not a valid sell-side sweep.
 
-## 2.10 Same-bar duplicate handling
+## 3.10 Same-bar duplicate handling
 
 A single SignalTimeframe candle may generate at most one sweep setup for one Liquidity Pool.
 
@@ -1013,13 +1208,17 @@ Every setup stores:
 
 ---
 
-# Phase 3 — Entry, Spread-Insulated SL, Net-R TP/BE, Re-entry & Trade Lifecycle
+
+## Phase 3 Gate
+
+The event stream must produce immutable level/pool instances, exact sweep classifications, touch counts and stable EventIDs from the same market-data pass.
+# Phase 4 — Entry, Stop, Target, Break-Even & Re-Entry Lifecycle
 
 ## Goal
 
-Define the exact entry, stop, target, BE, re-entry and optional time-exit behavior.
+Turn valid sweep events into fully specified trades with executable entries, research/live stop profiles, net-R targets, break-even behavior, re-entry and session handling.
 
-## 3.1 Entry modes
+## 4.1 Entry modes
 
 Input:
 
@@ -1057,7 +1256,7 @@ Entry is the first valid tick after that confirmation candle closes.
 
 If confirmation fails, the setup expires. If the confirmation entry timestamp falls outside StrategyEntryWindow or the symbol is not tradeable, the pending setup expires without entry.
 
-## 3.2 Exact initial SL reference
+## 4.2 Exact initial SL reference
 
 Input:
 
@@ -1081,7 +1280,7 @@ Therefore, using the FundedNext XAUUSD pip convention:
 
 `StopReference = SweepHigh + SLBufferPrice`
 
-## 3.3 Spread-insulated research stop trigger
+## 4.3 Spread-insulated research stop trigger
 
 The stop trigger uses:
 
@@ -1112,7 +1311,7 @@ The live adapter must place a broker-native protective SL where the venue permit
 
 The ledger stores StopModel = MID_RESEARCH or NATIVE_QUOTE so the two performance series cannot be mixed silently.
 
-## 3.4 Minimum execution validity
+## 4.4 Minimum execution validity
 
 Before a stop/TP/BE price is accepted, the engine checks:
 
@@ -1124,7 +1323,7 @@ Before a stop/TP/BE price is accepted, the engine checks:
 
 The research engine must not fabricate an executable price that would be illegal under the symbol specification.
 
-## 3.5 1R definition
+## 4.5 1R definition
 
 At entry:
 
@@ -1156,7 +1355,7 @@ and start-of-day equity is `$100,000`:
 
 Position size is solved from the actual stop distance and symbol value.
 
-## 3.6 TP definition
+## 4.6 TP definition
 
 Input:
 
@@ -1192,7 +1391,7 @@ Only when selected, all 15 scenarios are tested:
 14. R5 / BE R3
 15. R5 / BE R4
 
-## 3.7 Net-R target construction
+## 4.7 Net-R target construction
 
 For the selected TP scenario:
 
@@ -1220,7 +1419,7 @@ The report separately retains:
 
 so the effect of costs is visible rather than hidden.
 
-## 3.8 Break-even definition
+## 4.8 Break-even definition
 
 The matrix labels BE R1/BE R2/BE R3/BE R4 mean activation at the specified positive price-R threshold under executable quote semantics.
 
@@ -1244,7 +1443,7 @@ The ledger records:
 - new stop reference
 - final exit result
 
-## 3.9 Re-entry
+## 4.9 Re-entry
 
 Input:
 
@@ -1285,7 +1484,7 @@ These are anti-churn guardrails and are frozen before OOS.
 
 TP or BE permanently ends that setup lifecycle.
 
-## 3.10 Time exit — optional research mode
+## 4.10 Time exit — optional research mode
 
 Inputs:
 
@@ -1299,7 +1498,7 @@ after N completed SignalTimeframe bars from entry, on the first valid tick after
 
 This feature is OFF by default and must not alter the baseline results unless explicitly enabled.
 
-## 3.11 Session behavior
+## 4.11 Session behavior
 
 Session end never forcibly closes an existing trade in the baseline.
 
@@ -1311,23 +1510,23 @@ Existing positions continue until:
 - optional time exit
 - optional risk-control exit explicitly enabled
 
-## 3.12 Completion output
+## 4.12 Completion output
 
 Same mandatory roadmap-update and patch-package protocol.
 
 ---
 
-# Phase 4 — Strategy-Specific Filters & Optional Risk Extensions
+
+## Phase 4 Gate
+
+Entry/exit behavior must be fully deterministic, executable-quote based, and covered by lifecycle and barrier-ordering fixtures.
+# Phase 5 — Strategy Filters & Optional Risk Extensions
 
 ## Goal
 
-Add the three approved strategy-specific filters without making them mandatory in the baseline.
+Implement the three approved strategy filters and keep news/spread/risk extensions isolated from the core matrix so research complexity remains controlled.
 
-All three are:
-
-`OFF` by default.
-
-## 4.1 Filter A — HTF Structure
+## 5.1 Filter A — HTF Structure
 
 Inputs:
 
@@ -1357,7 +1556,7 @@ Neutral/ambiguous structure = no trade.
 
 No future data.
 
-## 4.2 Filter B — Sweep Quality
+## 5.2 Filter B — Sweep Quality
 
 Inputs:
 
@@ -1375,7 +1574,7 @@ Requirements:
 
 ATR uses completed pre-sweep candles only.
 
-## 4.3 Filter C — Opposing Liquidity / Target Room
+## 5.3 Filter C — Opposing Liquidity / Target Room
 
 Input:
 
@@ -1391,7 +1590,7 @@ the selected TP must be before the nearest relevant opposing liquidity in the mo
 
 If no valid opposing liquidity exists, the trade is not rejected solely for absence of a target reference.
 
-## 4.3A Filter D — Macro News
+## 5.3A Filter D — Macro News
 
 Inputs:
 
@@ -1402,7 +1601,7 @@ NewsImportance = HIGH
 
 Default is OFF / OBSERVE_ONLY. Blocking is permitted only with a validated event calendar and frozen mapping of USD-sensitive high-impact events.
 
-## 4.3B Filter E — Spread / Execution Quality
+## 5.3B Filter E — Spread / Execution Quality
 
 Inputs:
 
@@ -1411,7 +1610,7 @@ MaxEntrySpreadToInitialRiskPct
 
 This is a transaction-cost gate, not a predictive feature. Rejected opportunities remain in the candidate ledger.
 
-## 4.4 Filter combinations
+## 5.4 Filter combinations
 
 For research, the engine can run:
 
@@ -1428,7 +1627,7 @@ These are **predefined scenarios**, not an optimizer.
 
 The engine must not search arbitrary threshold combinations.
 
-## 4.5 Optional directional-risk cap
+## 5.5 Optional directional-risk cap
 
 Input:
 
@@ -1440,7 +1639,7 @@ When disabled, baseline behavior is unchanged.
 
 When enabled, Long and Short open positions are counted separately.
 
-## 4.6 Optional total drawdown and streak guards
+## 5.6 Optional total drawdown and streak guards
 
 Supported but OFF by default:
 
@@ -1454,19 +1653,23 @@ Supported but OFF by default:
 
 These controls are reported separately from the default daily 3R guard.
 
+## Phase 5 Gate
+
+Filters and optional controls must be independently switchable, documented, and excluded from the frozen baseline unless explicitly declared as a research scenario.
+
 ### Completion output
 
 Same mandatory roadmap-update and patch-package protocol.
 
 ---
 
-# Phase 5 — Single-Pass Backtest, Scenario State Engine & Hierarchical Reporting
+# Phase 6 — Single-Pass Backtest, Scenario Engine, Ledger & Reporting
 
 ## Goal
 
-Process historical market data once per run while producing independent scenario results and all required reports without rerunning the backtest for each month/year.
+Run the frozen event stream through isolated scenario states using one market-data pass and produce the complete event/trade ledger and hierarchical reports.
 
-## 5.1 Single market pass
+## 6.1 Single market pass
 
 The engine reads the selected tick stream once.
 
@@ -1486,7 +1689,7 @@ Reports are generated afterward by grouping the resulting ledger.
 
 January must never trigger a second backtest merely to create the January report.
 
-## 5.2 Matrix scenario architecture
+## 6.2 Matrix scenario architecture
 
 In Full Matrix mode, all 15 TP/BE scenarios run against the same single market-data traversal inside the Research Simulator. No scenario may place live orders.
 
@@ -1504,7 +1707,7 @@ If confirmation/filter scenarios are being compared, each scenario has independe
 
 Market ticks are not reread 15 times.
 
-## 5.3 Exact tested ranges
+## 6.3 Exact tested ranges
 
 ### Experimental
 
@@ -1524,7 +1727,7 @@ plus:
 
 The OOS year is not read by optimization or selection logic before the final OOS run.
 
-## 5.4 Trade ledger fields
+## 6.4 Trade ledger fields
 
 Minimum:
 
@@ -1572,7 +1775,7 @@ Minimum:
 - Holding duration
 - Holding bars
 
-## 5.5 Monthly report
+## 6.5 Monthly report
 
 For every month:
 
@@ -1610,7 +1813,7 @@ For every month:
 - Prop-rule breach and near-breach counts
 - Candidate rejection counts by reason
 
-## 5.6 Annual report
+## 6.6 Annual report
 
 For every year:
 
@@ -1637,7 +1840,7 @@ At minimum:
 - MAE/MFE
 - Holding time
 
-## 5.7 Grand total
+## 6.7 Grand total
 
 For a multi-year test:
 
@@ -1645,7 +1848,7 @@ same metric family over the complete requested range.
 
 The final report also clearly identifies which calendar periods were Development and which were OOS.
 
-## 5.8 Drawdown definition
+## 6.8 Drawdown definition
 
 For each report period:
 
@@ -1659,7 +1862,7 @@ which shows whether the period began already below a previous peak.
 
 This prevents a monthly report from hiding the fact that the account entered the month already underwater.
 
-## 5.9 Max DD Touch Count
+## 6.9 Max DD Touch Count
 
 The user-requested metric is retained.
 
@@ -1691,7 +1894,7 @@ means the 2026 equity curve revisited its 8.4R drawdown zone five distinct times
 
 The example values are illustrative only.
 
-## 5.10 Research stratification reports
+## 6.10 Research stratification reports
 
 Without rerunning the backtest, the same ledger must support additional tables by:
 
@@ -1709,7 +1912,7 @@ Without rerunning the backtest, the same ledger must support additional tables b
 
 These are descriptive slices, not independent backtests.
 
-## 5.11 Execution-cost analysis
+## 6.11 Execution-cost analysis
 
 The report must show:
 
@@ -1726,7 +1929,7 @@ The report must show:
 
 This allows the user to see whether the strategy edge survives costs.
 
-## 5.12 Scenario-comparison output
+## 6.12 Scenario-comparison output
 
 The engine outputs all requested TP/BE scenarios side by side.
 
@@ -1745,19 +1948,23 @@ Scenario comparison includes:
 - cost/R
 - MAE/MFE
 
+## Phase 6 Gate
+
+One tick stream must generate the complete ledger and all scenario outputs without scenario-dependent event creation or destruction.
+
 ### Completion output
 
 Same mandatory roadmap-update and patch-package protocol.
 
 ---
 
-# Phase 6 — Statistical Validation, Reference Implementation, Freeze, Extended Test & OOS
+# Phase 7 — Deterministic Validation, Reference Reconciliation & Statistical Tests
 
 ## Goal
 
-Prevent backtest artifacts, implementation mistakes and configuration selection bias from being mistaken for a real strategy effect.
+Prove that the implemented engine is deterministic and reconciles to an independent reference before interpreting extended-development or holdout performance.
 
-## 6.1 Deterministic validation
+## 7.1 Deterministic validation
 
 Must prove:
 
@@ -1779,7 +1986,7 @@ Must prove:
 - no month/year backtest reruns for reporting
 - independent scenario state isolation
 
-## 6.2 Deterministic state-machine fixtures
+## 7.2 Deterministic state-machine fixtures
 
 Before long historical runs, blocking fixtures must cover:
 
@@ -1806,13 +2013,13 @@ ConsumedPool -> no duplicate same-event trade
 ConfirmedSwing -> no future information
 LivePositionState == BrokerReconciledPositionState
 
-## 6.3 Multiple-testing-aware validation
+## 7.3 Multiple-testing-aware validation
 
 When candidate selection is performed, use a suitable multiple-testing-aware method such as White's Reality Check and/or Hansen's SPA in addition to Deflated Sharpe / PBO diagnostics.
 
 When outcome windows overlap, use purging/embargo or equivalent temporal leakage control. Random K-fold is prohibited for overlapping financial labels.
 
-## 6.4 Python/reference reconciliation
+## 7.4 Python/reference reconciliation
 
 Build a small independent reference implementation of the core event/position state machine.
 
@@ -1834,7 +2041,7 @@ Any discrepancy outside a predefined numerical tolerance becomes a blocking defe
 
 This is an independent cross-check, not a second production engine.
 
-## 6.5 Bootstrap and Monte Carlo
+## 7.5 Bootstrap and Monte Carlo
 
 The research package must include:
 
@@ -1860,7 +2067,7 @@ Use bootstrap confidence intervals for:
 
 The purpose is to show uncertainty, not to manufacture a probability of future profit.
 
-## 6.6 Multiple-testing control
+## 7.6 Multiple-testing control
 
 The project deliberately contains multiple predefined scenarios.
 
@@ -1874,7 +2081,7 @@ Therefore:
 
 The 15 TP/BE matrix is treated as a **research matrix**, not as permission to optimize 15 results and keep only the best one.
 
-## 6.7 Parameter sensitivity
+## 7.7 Parameter sensitivity
 
 Predeclare small, non-optimized sensitivity checks around structural parameters.
 
@@ -1887,7 +2094,7 @@ Sensitivity results are reported as stability ranges.
 
 The engine must not search arbitrary hundreds of parameter values.
 
-## 6.8 Execution stress validation
+## 7.8 Execution stress validation
 
 Run controlled robustness variants for:
 
@@ -1899,7 +2106,13 @@ Run controlled robustness variants for:
 
 These are stress tests, not historical claims. The exact stress values must be declared before the run and included in the final report.
 
-## 6.9 Regime robustness
+
+## Phase 7 Gate
+
+All blocking fixtures pass and the MQL5 engine reconciles with the independent reference within predefined tolerance before performance interpretation.
+# Phase 8 — Robustness, Freeze, Development & Historical Holdout
+
+## 8.1 Regime robustness
 
 Within the Development data, report performance separately across meaningful historical blocks.
 
@@ -1917,13 +2130,13 @@ without using these splits as a hidden optimizer.
 
 The objective is to determine whether the behavior exists across more than one market regime.
 
-## 6.10 Secondary-symbol robustness
+## 8.2 Secondary-symbol robustness
 
 After XAUUSD core rules are frozen, the same deterministic engine may be run on XAGUSD as a **robustness check**, not as a parameter-selection tool for XAUUSD.
 
 The secondary symbol result cannot be used to alter the already-frozen XAUUSD OOS rule set.
 
-## 6.11 Data-source robustness
+## 8.3 Data-source robustness
 
 Primary research remains the target broker/tester feed because execution spread and symbol rules are broker-specific.
 
@@ -1935,7 +2148,7 @@ A secondary historical source may be used only for:
 
 It must not be mixed tick-by-tick with the target broker feed.
 
-## 6.12 Experimental freeze
+## 8.4 Experimental freeze
 
 After the experimental phase:
 
@@ -1945,7 +2158,7 @@ the strategy configuration intended for the extended run is frozen.
 
 Any material strategy-rule change after seeing extended-development performance creates a new research version and must not be silently folded into the old version.
 
-## 6.13 Extended development test
+## 8.5 Extended development test
 
 Run the frozen version on:
 
@@ -1957,7 +2170,7 @@ and:
 
 Exclude all of 2025.
 
-## 6.14 Paired execution-profile robustness
+## 8.6 Paired execution-profile robustness
 
 Evaluate the frozen strategy under:
 
@@ -1966,7 +2179,7 @@ Evaluate the frozen strategy under:
 
 No deployment decision may rely only on the research-only MidPrice trigger.
 
-## 6.15 Historical blind holdout audit
+## 8.7 Historical blind holdout audit
 
 Run the frozen configuration on:
 
@@ -1982,12 +2195,12 @@ No holdout observation may feed:
 - scenario pruning
 - code changes intended to improve the OOS result
 
-## 6.16 Final research package
+## 8.8 Final research package
 
 Must contain:
 
 - exact code version
-- exact roadmap version
+- exact roadmap commit/file hash
 - exact Inputs
 - symbol specification snapshot
 - data-quality report
@@ -2005,19 +2218,27 @@ Must contain:
 - compile/test logs
 - known limitations
 
+## Phase 8 Gate
+
+Robustness results, freeze state, development runs and 2025 holdout are reproducible and no holdout observation feeds rule selection.
+
 ### Completion output
 
 Same mandatory roadmap-update and patch-package protocol.
 
 ---
 
-# Phase 7 — Production Hardening, Shadow Run & True Forward Validation
+## Goal
+
+Stress the frozen implementation across regimes, execution profiles and data sources, then run the extended development set and the untouched 2025 historical holdout without feeding results back into rules.
+
+# Phase 9 — Production Hardening, Shadow Run & True Forward Validation
 
 ## Goal
 
-Prove the EA remains correct and safe under operational failures before live deployment.
+Prove operational safety under broker/terminal/network failures, then use the frozen configuration for shadow, demo and chronological forward validation from 2026-09-29 onward.
 
-## 7.1 Mandatory live controls
+## 9.1 Mandatory live controls
 
 - broker-native protective SL where supported
 - account/rule-profile daily-loss hard stop
@@ -2033,7 +2254,7 @@ Prove the EA remains correct and safe under operational failures before live dep
 - emergency disable switch
 - structured logs
 
-## 7.2 Fault-injection tests
+## 9.2 Fault-injection tests
 
 Test:
 
@@ -2048,7 +2269,7 @@ Test:
 
 Recovery must use broker-confirmed state, not an in-memory assumption.
 
-## 7.3 True forward validation
+## 9.3 True forward validation
 
 Starting 2026-09-29, the frozen configuration enters:
 
@@ -2056,7 +2277,7 @@ SHADOW -> DEMO -> LIVE_AFTER_APPROVAL
 
 Forward data records actual spread, entry/exit slippage, latency, rejects, downtime, restarts and reconciliation errors. These observations may inform a future research version but never retroactively alter the 2025 OOS.
 
-## 7.4 Deployment gate
+## 9.4 Deployment gate
 
 Deployment requires:
 
@@ -2067,7 +2288,7 @@ Deployment requires:
 - shadow/demo behavior reconciled
 - no unresolved blocking defect
 
-## 7.5 Release artifact
+## 9.5 Release artifact
 
 Store:
 
@@ -2081,6 +2302,10 @@ Store:
 
 ---
 
+
+## Phase 9 Gate
+
+Operational fault tests pass, account/rule profile is verified, and the frozen configuration enters forward validation with immutable observation logs.
 # Research & Implementation References
 
 The roadmap is informed by:
@@ -2109,7 +2334,7 @@ Practitioner sources are for hypothesis generation and terminology; empirical cl
 
 # Mandatory Roadmap Maintenance Protocol
 
-This protocol applies to **every phase that changes code**.
+This protocol applies to **every phase that changes code or materially changes the research implementation**.
 
 At phase completion:
 
@@ -2146,14 +2371,16 @@ Use exactly this compact structure inside the roadmap:
 
 ---
 
-# Change Log From Previous Roadmap Version
+# Roadmap Update Log
 
-## Major corrections
+## Update 2026-09-28 — Final Audit and Chat-Size Restructure
 
-### 1. Entry confirmation
+This is the canonical roadmap file. Future changes are appended here; the filename and path remain unchanged.
+
+### Entry confirmation
 The original immediate-reclaim entry remains the **control/default hypothesis**, but the roadmap now contains one exact next-bar confirmation variant so continuation-after-sweep can be measured without introducing a large combinatorial search.
 
-### 2. XAUUSD pip ambiguity
+### XAUUSD pip ambiguity
 The baseline explicitly defines:
 
 `StrategyPipSize = 0.10`
@@ -2162,7 +2389,7 @@ for the FundedNext XAUUSD convention.
 
 The strategy no longer uses the undefined word “pip” as an implementation primitive.
 
-### 3. Stop model
+### Stop model
 The stop now explicitly separates:
 
 - stop reference
@@ -2171,7 +2398,7 @@ The stop now explicitly separates:
 
 The trigger is based on same-tick MidPrice so spread expansion alone does not invalidate the research setup.
 
-### 4. Sweep validity
+### Sweep validity
 A Sweep Candle must approach the level from the correct side:
 
 - Short: `Open < Level < High`, then `Close < Level`
@@ -2179,37 +2406,37 @@ A Sweep Candle must approach the level from the correct side:
 
 This eliminates the ambiguous candle-opening-above/below-level case.
 
-### 5. Liquidity lifecycle
+### Liquidity lifecycle
 Liquidity pools have explicit states and are consumed after a successful sweep to prevent duplicate setup generation.
 
-### 6. First-touch handling
+### First-touch handling
 First-touch is not imposed as an unproven universal rule. Pre-sweep touches are measured and reported, making the effect testable.
 
-### 7. Net-R accounting
+### Net-R accounting
 TP construction now works from executable quote sides and deterministic costs rather than from a raw geometric price-distance multiple only.
 
-### 8. Execution realism
+### Execution realism
 Symbol volume/price restrictions, margin, stops/freeze levels, tick size, and cost models are part of the foundation rather than late additions.
 
-### 9. Data quality
+### Data quality
 The tester’s real-tick/generation fallback behavior is audited and reported instead of assumed away.
 
-### 10. Research ordering
+### Research ordering
 A lightweight event study happens before the complete execution/scenario engine so a weak raw signal can be identified early.
 
-### 11. Statistical validation
+### Statistical validation
 Bootstrap confidence intervals, trade-sequence Monte Carlo, sensitivity, independent reference reconciliation, and multiple-testing diagnostics were added.
 
-### 13. V3/V4 strategy-logic hardening
+### current/current strategy-logic hardening
 The roadmap now defines immutable event identity, explicit liquidity-pool geometry, exact penetration/reclaim formulas, touch counting, level freshness, target-room eligibility, gap handling, aggregate risk ceilings, external account-rule compliance, and complete admission decision traces.
 
-### 14. Risk-model correction
+### Risk-model correction
 Planned risk is separated from realized stop loss and execution deviation so the Research MidPrice stop cannot masquerade as an exact -1R live loss.
 
-### 15. Holdout chronology correction
+### Holdout chronology correction
 2025 is now a historical blind holdout; 2026-09-29 onward is the true chronological forward OOS series.
 
-### 12. Reporting
+### Reporting
 The requested MaxDD Touch Count remains, but the report now also exposes starting-underwater drawdown so monthly/yearly boundaries cannot create misleading standalone DD figures.
 
 ---
