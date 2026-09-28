@@ -3,7 +3,7 @@
 **Document name:** `Liquidity_Sweep_Reversal_Roadmap.md`  
 **Status:** V3 STRATEGY-LOGIC HARDENED SPEC — research + production-architecture ready  
 **Research audit date:** 2026-09-28  
-**V3 design score:** 8.6/10 for methodology/architecture and deterministic strategy specification when implemented exactly; profitability remains unvalidated  
+**V3 design score:** 8.9/10 for methodology/architecture and deterministic strategy specification when implemented exactly; profitability remains unvalidated  
 **Baseline symbol:** XAUUSD  
 **Baseline broker context:** FundedNext / MT5  
 **Baseline signal timeframe:** M1  
@@ -243,6 +243,13 @@ MaxConcurrentPositions = 3 is not sufficient by itself.
 Also enforce:
 - MaxAggregateOpenWorstCaseRiskR
 - MaxDirectionalOpenWorstCaseRiskR
+
+Default safety ceilings:
+
+MaxAggregateOpenWorstCaseRiskR = 3.0R
+MaxDirectionalOpenWorstCaseRiskR = 2.0R
+
+These are safety ceilings, not optimality claims, and may be tightened before deployment.
 
 Aggregate worst-case exposure includes all open trades plus declared execution buffers. No new trade is admitted when it would breach an aggregate ceiling.
 
@@ -572,9 +579,11 @@ The research report must never present current costs applied retrospectively as 
 Inputs:
 
 MaxEntrySpreadEnabled = true
-MaxEntrySpreadStrategyPips
-MaxEntrySpreadToInitialRiskPct
-MaxEntryCostR
+MaxEntrySpreadStrategyPips = 3.0
+MaxEntrySpreadToInitialRiskPct = 25%
+MaxEntryCostR = 0.10R
+
+These are pre-registered research defaults, not optimality claims. They may not be tuned from OOS.
 
 A candidate is rejected before admission when the observed entry spread or ex-ante measurable cost violates the frozen gate. Rejected candidates remain in the ledger with a rejection reason. Numeric thresholds are frozen before OOS.
 
