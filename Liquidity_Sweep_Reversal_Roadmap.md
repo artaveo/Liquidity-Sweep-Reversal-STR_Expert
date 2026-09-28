@@ -395,7 +395,7 @@ The project must have one explicit baseline configuration before any untouched h
 - Spread/Cost Gate = ON
 - StopExecutionProfile = LIVE_NATIVE_STOP
 - MaxEntrySpreadStrategyPips = 3.0
-- - MaxEntryKnownNonSpreadCostR = 0.10R
+- MaxEntryKnownNonSpreadCostR = 0.10R
 - ReEntryAttempts = 1
 - MaxOpenPositionsPerLiquidityPool = 1
 - MaxConcurrentPositions = 3
@@ -1199,7 +1199,7 @@ No optimization is allowed.
 
 The event study also reports fixed forward horizons such as 1, 3, 5, 10 and 20 completed bars, plus first-barrier outcomes when valid stop/target references exist. Horizon definitions are frozen before analysis.
 
-## 3.5 Phase-1 foundation gate
+## 3.5 Event-study foundation gate
 
 The event study does not declare the strategy profitable.
 
