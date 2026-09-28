@@ -13,7 +13,8 @@
 **Default Daily Profit Target:** OFF, 9R  
 **Experimental range:** 2026-01-01 → 2026-09-28  
 **Extended development range:** 2020-07-01 → 2024-12-31 and 2026-01-01 → 2026-09-28  
-**Reserved OOS:** 2025-01-01 → 2025-12-31
+**Historical blind holdout:** 2025-01-01 → 2025-12-31  
+**True forward OOS:** 2026-09-29 → onward
 
 ---
 
@@ -166,6 +167,14 @@ For every pooled set of high-side levels define:
 For low-side pools use the analogous band.
 
 Clustering is only for deduplication and common event identity; it does not erase the member prices.
+
+A pool may be formed only when max(member levels) - min(member levels) <= LiquidityClusteringTolerancePrice.
+
+Baseline:
+
+LiquidityClusteringTolerancePips = 3.0
+
+This prevents transitive chain clustering from silently producing an over-wide pool.
 
 A high-side sweep is valid only when all are true:
 - PreviousBarClose < PoolLower
@@ -624,6 +633,8 @@ Inputs:
 
 The daily guard is a **new-risk admission guard**, not a floating-loss forced exit.
 
+It is an internal strategy budget and does not replace the external AccountRuleEngine. For compliance, the external account-rule engine takes precedence.
+
 Before any new position:
 
 `RemainingDailyRiskR = MaxDailyLossR + RealizedNetDailyR - ReservedWorstCaseOpenRiskR`
@@ -681,6 +692,8 @@ When enabled:
 `NetDailyEquity/PnL >= +9R`
 
 blocks new entries for the remainder of that broker day.
+
+If enabled, `ProfitTargetBasis = NET_EQUITY` and floating P/L is valued on executable quotes. This is a policy control, not a strategy-quality metric.
 
 It does not force-close existing positions.
 
@@ -1042,7 +1055,7 @@ The immediately following SignalTimeframe candle must confirm as specified in Ph
 
 Entry is the first valid tick after that confirmation candle closes.
 
-If confirmation fails, the setup expires.
+If confirmation fails, the setup expires. If the confirmation entry timestamp falls outside StrategyEntryWindow or the symbol is not tradeable, the pending setup expires without entry.
 
 ## 3.2 Exact initial SL reference
 
@@ -1115,7 +1128,19 @@ The research engine must not fabricate an executable price that would be illegal
 
 At entry:
 
-RiskAmount1R = modeled loss between executable entry and initial stop, plus only costs deterministically known at admission.
+`PlannedRisk1R` = modeled loss between executable entry and initial stop under the selected execution profile, plus only costs deterministically known at admission.
+
+For `RESEARCH_MID_STOP`, position sizing includes the declared stop-execution spread buffer so the R unit is not based on a midpoint trigger while ignoring the executable opposite quote.
+
+For `LIVE_NATIVE_STOP`, sizing uses the broker-native quote-side stop plus declared slippage/gap stress.
+
+Store separately:
+
+`PlannedRisk1R`
+`RealizedStopLossR`
+`ExecutionDeviationR`
+
+A MidPrice stop trigger followed by a worse executable Bid/Ask exit must never be reported as exactly -1R merely because the reference level was crossed.
 
 Use OrderCalcProfit / equivalent symbol-specific economics rather than a hard-coded pip-value shortcut. Future spread, slippage and swap are not treated as knowable at entry.
 
@@ -1200,6 +1225,12 @@ so the effect of costs is visible rather than hidden.
 The matrix labels BE R1/BE R2/BE R3/BE R4 mean activation at the specified positive price-R threshold under executable quote semantics.
 
 BETriggerBasis = PRICE_R
+
+BE trigger condition:
+
+`CurrentExecutableProfit / PlannedRisk1R >= BETriggerR`
+
+where CurrentExecutableProfit uses Bid for Long and Ask for Short.
 
 After activation, move to a cost-neutral break-even reference only when legal under symbol stop/freeze constraints. Otherwise record BE_BLOCKED_BY_SYMBOL_RULE.
 
