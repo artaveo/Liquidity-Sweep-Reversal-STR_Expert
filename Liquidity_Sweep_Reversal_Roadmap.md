@@ -5,12 +5,14 @@
 **Research audit date:** 2026-09-28  
 **Baseline symbol:** XAUUSD  
 **Baseline broker context:** FundedNext / MT5  
-**Baseline signal timeframe:** M1  
+**Research TimeframeSet default:** M5, M15, H1  
+**Live signal timeframe:** exactly one fixed member of the declared TimeframeSet  
 **Research risk default:** 0.50% per trade = 1R  
 **Default Daily Loss Guard:** ON, 3R  
 **Default Max Concurrent Positions:** 3  
 **Default Daily Profit Target:** OFF, 9R  
-**Experimental range:** 2026-01-01 → 2026-09-28  
+**Rapid iteration sample:** 2026-01-01 → 2026-06-30  
+**Full discovery/experimental range:** 2026-01-01 → 2026-09-28  
 **Extended development range:** 2020-07-01 → 2024-12-31 and 2026-01-01 → 2026-09-28  
 **Historical blind holdout:** 2025-01-01 → 2025-12-31  
 **True forward OOS:** 2026-09-29 → onward
@@ -55,7 +57,8 @@ The selection rule must be frozen before OOS:
 2. among survivors prefer lower rule complexity;
 3. if tied, prefer lower tail risk/drawdown under the declared stress set;
 4. freeze the pre-registered Primary Configuration before the untouched holdout;
-5. use the untouched holdout only for pass/fail confirmation and distributional reporting — never for ranking, tie-breaking, pruning or parameter changes.
+5. use the untouched holdout only for pass/fail confirmation and distributional reporting — never for ranking, tie-breaking, pruning or parameter changes;
+6. when multiple timeframes are preregistered, each timeframe is a separate research trial; do not choose a “best timeframe” by historical performance, and do not use cross-timeframe ranking for deployment selection.
 
 A material candidate introduced after results are seen reopens the holdout process. The single roadmap file is preserved; research state is identified by Git commit, DataManifest and experiment identifiers.
 
@@ -64,8 +67,8 @@ A material candidate introduced after results are seen reopens the holdout proce
 Architecture is explicitly:
 
 - Strategy Core — deterministic, side-effect-free signal and lifecycle logic.
-- Research Simulator — synthetic multi-scenario execution over one tick stream.
-- Live Execution Adapter — one frozen deployment configuration only.
+- Research Simulator — synthetic multi-scenario execution over one tick stream, including separate preregistered timeframe contexts.
+- Live Execution Adapter — one frozen deployment configuration and one fixed signal timeframe only.
 - Ledger / Reporting — immutable candidate, event and trade records.
 
 The Full Matrix is research simulation, not fifteen live strategies.
@@ -76,8 +79,9 @@ PDH/PDL, session extremes, swings and equal highs/lows are **price-level proxies
 
 ### 0A.5 Validation chronology
 
-- 2026-01-01 → 2026-09-28 = discovery / experiment
-- 2020-07-01 → 2024-12-31 = development / robustness
+- 2026-01-01 → 2026-06-30 = rapid iteration / small-sample development
+- 2020-07-01 → 2024-12-31 = extended development / robustness
+- 2026-07-01 → 2026-09-28 = late-2026 development extension after rapid-iteration gates
 - 2025-01-01 → 2025-12-31 = untouched historical OOS
 - 2026-09-29 → onward = true forward validation
 
@@ -383,7 +387,9 @@ These rules close the remaining material loopholes found during the final audit.
 The project must have one explicit baseline configuration before any untouched holdout interpretation. It is a reference hypothesis, not a claim that it is the most profitable configuration.
 
 - Symbol = XAUUSD
-- SignalTimeframe = M1
+- TimeframeSet = M5,M15,H1
+- LiveTimeframe = one fixed selected member only
+- Each selected research timeframe is a separate preregistered trial with isolated state and reporting.
 - SignalBarPriceSource = BID
 - LiquiditySourceProfile = ALL_FOUR (PDH/PDL, Previous Session H/L, Confirmed Swings, Equal Highs/Lows)
 - EntryMode = RECLAIM_CLOSE
@@ -589,7 +595,7 @@ The roadmap is split into 9 medium-sized phases. Each is a coherent, testable wo
 These rules apply to every phase.
 
 1. **Broker Server Time is the source of truth.** No manual UTC/DST conversion is used for strategy session logic.
-2. **Signal timeframe is an Input.** Default `M1`; at minimum support `M1/M5/M15/M30/H1`.
+2. **TimeframeSet is an Input.** Default `M5,M15,H1`; allowed values are `M1/M5/M15/M30/H1`. Research may execute multiple selected timeframes in one pass; live execution uses exactly one fixed timeframe.
 3. **Execution is Tick based.** Signal detection may be candle based, but entry/exit execution uses the actual tick stream.
 4. **Primary research tester:** `Every tick based on real ticks`.
 5. **No average/bar spread for execution.** The exact Bid/Ask from the event tick is used.
@@ -597,15 +603,17 @@ These rules apply to every phase.
 7. **No hidden rules.** Entry, confirmation, liquidity lifecycle, SL, TP, BE, re-entry, risk, sessions, costs, and reporting all have deterministic definitions.
 8. **2025 is permanently reserved for OOS** in the extended research design. It cannot be used to select rules, filters, parameters, or scenarios.
 9. **Single market-data pass for reporting.** Monthly/yearly/full-period reports must come from the same ledger, not separate backtests.
-10. **Scenario isolation.** Each TP/BE/confirmation/filter scenario has independent account/trade state while sharing the one market-data stream.
-11. **No automatic “best configuration” selection.** The engine reports predefined configurations; it must not silently optimize and select the highest historical result.
-12. **Every code-changing phase updates this roadmap.**
-13. **Roadmap filename and relative path never change:** `Liquidity_Sweep_Reversal_Roadmap.md`.
-14. **Changed files keep their original filenames and relative paths. Unchanged files are untouched.**
-15. **Research matrices are synthetic simulations; live trading uses one frozen configuration.**
-16. **Broker-native protective SL is mandatory for live deployment where supported.**
-17. **All OHLC-derived logic uses one declared bar price source; executable P/L uses Bid/Ask.**
-18. **Every research run is reproducible from its DataManifest.**
+10. **Scenario isolation.** Each scenario has independent account/trade state while sharing the one market-data stream.
+11. **Multi-timeframe research isolation.** Every selected timeframe has its own positions, daily risk, max positions, equity, drawdown, trade ledger and event ledger. No state is shared between timeframes; only the normalized tick stream is shared.
+12. **Live timeframe isolation.** Live trading runs one fixed timeframe only; multi-timeframe execution is prohibited.
+13. **No automatic “best configuration” selection.** The engine reports predefined configurations; it must not silently optimize and select the highest historical result.
+14. **Every code-changing phase updates this roadmap.**
+15. **Roadmap filename and relative path never change:** `Liquidity_Sweep_Reversal_Roadmap.md`.
+16. **Changed files keep their original filenames and relative paths. Unchanged files are untouched.**
+17. **Research matrices are synthetic simulations; live trading uses one frozen configuration.**
+18. **Broker-native protective SL is mandatory for live deployment where supported.**
+19. **All OHLC-derived logic uses one declared bar price source; executable P/L uses Bid/Ask.**
+20. **Every research run is reproducible from its DataManifest.**
 
 ---
 
@@ -615,21 +623,23 @@ These rules apply to every phase.
 
 Establish the exact, reproducible market-data and broker/execution contract consumed by every later phase. This phase does not build the strategy itself.
 
-## 1.1 Signal timeframe
+## 1.1 TimeframeSet and live timeframe
 
 Input:
 
-`SignalTimeframe`
+`TimeframeSet`
 
 Default:
 
-`M1`
+`M5,M15,H1`
 
-Required selectable values include:
+Allowed selectable values:
 
 `M1 / M5 / M15 / M30 / H1`
 
-All candle calculations use the selected SignalTimeframe.
+The research tester may process one or multiple selected timeframes from the same tick stream, but each timeframe runs in a completely isolated research state.
+
+Live trading must select exactly one fixed timeframe from the declared set. Separate simultaneous live execution by multiple timeframes is prohibited.
 
 Tick execution remains independent of the selected timeframe.
 
@@ -888,11 +898,15 @@ It does not force-close existing positions.
 
 ## Phase 1 Gate
 
+**Logic:** Phase 1 closes the data/execution contract before any strategy result can be trusted.
+
+Before advancing, submit the DataManifest schema, symbol/session snapshot, data-quality audit and execution contract using the Rapid Iteration Sample only where a historical smoke check is needed. Keep every roadmap default unchanged; only the requested date range may be changed to the rapid sample for speed. No strategy input is tuned in this phase.
+
 Complete only when the requested historical range, real-tick/fallback coverage, broker server-time basis, symbol specification, Bid/Ask quote model, cost model, spread gate, sizing constraints and canonical daily-risk admission inputs are fully measurable and reproducible.
 
 ### Required output
 
-Data-quality report, symbol/session snapshot, cost/execution contract, and DataManifest schema. No strategy-selection decision is made here.
+Data-quality report, symbol/session snapshot, cost/execution contract, DataManifest schema, exact Inputs/Run Card, and blocking-test status. No strategy-selection decision is made here.
 # Phase 2 — Liquidity Model, Exact Sweep Events & Python Reference Foundation
 
 ## Goal
@@ -1078,6 +1092,18 @@ A single SignalTimeframe candle may generate at most one sweep setup for one Liq
 
 Multiple source labels inside the same pool do not multiply the trade.
 
+### 2.10A Multi-timeframe single-pass event processing
+
+Input:
+
+`TimeframeSet = M5,M15,H1` (default)
+
+The tick stream is read exactly once. All selected timeframes are advanced from that same stream in the same pass; the tester must not run a separate market-data pass per timeframe.
+
+Each timeframe receives an independent event state and its own EventID/timeframe identity, event ledger and lifecycle state. The normalized tick stream is shared input only; liquidity, sweep, confirmation and lifecycle state are never shared across timeframes.
+
+Each selected timeframe is one preregistered multiple-testing trial. “Independent” here means independent trial identity/state, not statistically independent price observations.
+
 ### Required output
 
 Every setup stores:
@@ -1094,6 +1120,7 @@ Every setup stores:
 - level age
 - confirmation mode
 - setup status
+- TimeframeID
 
 ---
 
@@ -1106,7 +1133,15 @@ Initial scope: liquidity instances, pool geometry, freshness, touch count, sweep
 
 The Python event layer is a research reference, not a second production engine.
 
-## Phase 2 Gate
+## 2.11 Phase 2 research gate and result submission
+
+**Logic:** Phase 2 proves deterministic event construction before historical performance work begins.
+
+The implementation may proceed only after the blocking event fixtures pass and the first rapid-iteration smoke run is reproducible on the declared TimeframeSet. Submit the event ledger/checksum for every selected timeframe; do not advance with only one timeframe result.
+
+For the submission, keep all roadmap defaults unchanged unless the phase explicitly names an input to vary. Record the exact changed inputs and leave every unmentioned input at its roadmap default.
+
+### Phase 2 Gate
 
 The event stream must produce immutable level/pool instances, exact sweep classifications, touch counts and stable EventIDs from the same market-data pass.
 # Phase 3 — Pre-Implementation Event Study & Early-Stop Decision
@@ -1117,9 +1152,11 @@ Measure the raw sweep/reclaim hypothesis on development/discovery data using the
 
 ## 3.1 Pre-implementation event study
 
-Before the full strategy execution engine is considered complete, run a lightweight event study over the experimental range:
+Before the full strategy execution engine is considered complete, run a lightweight event study over the **Rapid Iteration Sample**:
 
-`2026-01-01 → 2026-09-28`
+`2026-01-01 → 2026-06-30`
+
+This short window is intentionally used for repeated early runs so each iteration remains operationally fast. The longer development ranges are reserved for later gates and are not used for routine parameter iteration.
 
 The event study must evaluate the core sweep definition with no optimization.
 
@@ -1193,9 +1230,9 @@ Spread is separately reported by bucket even when the spread filter is OFF.
 
 ## 3.4 Development event-study replication
 
-Repeat the lightweight event study over 2020-07-01 → 2024-12-31 with 2025 excluded. This tests whether the raw sweep/reclaim behavior is unique to the 2026 discovery sample.
+The multi-year replication is **deferred to Phase 8**. Phase 3 must use only the Rapid Iteration Sample so repeated development runs remain short.
 
-No optimization is allowed.
+Phase 3 may repeat the same event-study logic across the declared TimeframeSet, but must not expand the date range beyond 2026-01-01 → 2026-06-30.
 
 The event study also reports fixed forward horizons such as 1, 3, 5, 10 and 20 completed bars, plus first-barrier outcomes when valid stop/target references exist. Horizon definitions are frozen before analysis.
 
@@ -1212,7 +1249,11 @@ It produces a factual research gate:
 - MAE/MFE
 - control vs confirmation comparison
 
-The next phase is allowed to proceed regardless of whether the event study looks attractive; its purpose is to prevent later code from hiding a weak raw signal.
+**Logic:** Phase 3 validates the raw event hypothesis before trade-management complexity is added.
+
+**Required user result packet before advancing:** submit both Hypothesis A and Hypothesis B results from the Rapid Iteration Sample, including exact Inputs used, event count, mean EventStudyNetR, one-sided 95% bootstrap upper CI, reversal/continuation table, costs and data-quality status. All Inputs not explicitly named for the run remain at roadmap defaults.
+
+Do not advance to Phase 4 until both hypothesis outputs have been received and the Phase 3 gate has been classified.
 
 ### Required output
 
@@ -1399,7 +1440,7 @@ and start-of-day equity is `$100,000`:
 
 Position size is solved from the actual stop distance and symbol value.
 
-## 4.6 TP definition
+## 4.6 TP / Exit policy definition
 
 Input:
 
@@ -1407,17 +1448,63 @@ Input:
 
 Default:
 
-`SINGLE`
+`FIXED_R`
 
-### Single TP
+Allowed:
+
+`FIXED_R`
+
+`TP_BE_MATRIX`
+
+`LIQUIDITY_STRUCTURE`
+
+### Mode 1 — FIXED_R
+
+This is the baseline control:
 
 `TP_R = 2.0`
 
-The value is configurable.
+`BreakEven = OFF`
 
-### Full Matrix
+The target remains configurable, but the Primary Configuration is fixed at 2R with no risk-free transition.
 
-Only when selected, all 15 scenarios are tested:
+### Mode 2 — TP_BE_MATRIX
+
+This is the existing fixed-R / BE research matrix. The roadmap currently defines all 15 scenarios; the implementation must expose them as predefined Scenario IDs and must not auto-select one.
+
+No Matrix result may silently replace the fixed 2R baseline.
+
+### Mode 3 — LIQUIDITY_STRUCTURE
+
+The engine exits from a deterministic opposing-liquidity target rather than a discretionary “engine judgment”.
+
+Input:
+
+`StructureExitMode`
+
+Allowed:
+
+`OPPOSING_LIQUIDITY`
+
+`LIQUIDITY_CAPPED_BY_R`
+
+Input:
+
+`StructureSafetyBufferTicks = 1`
+
+Input:
+
+`StructureMaxTP_R = 2.0` (used by LIQUIDITY_CAPPED_BY_R)
+
+**OPPOSING_LIQUIDITY:** for Long, target is one declared safety buffer before the nearest eligible opposing high-side PoolLower; for Short, target is one safety buffer before the nearest eligible opposing low-side PoolUpper. The opposing pool must be known and eligible at the exact entry timestamp. No valid opposing target = `NO_TRADE_NO_TARGET`.
+
+**LIQUIDITY_CAPPED_BY_R:** target is the nearer of the eligible opposing-liquidity target and `StructureMaxTP_R`. If no eligible opposing liquidity exists, use `StructureMaxTP_R`.
+
+Mode 3 uses BreakEven = OFF in the initial research state. Adding BE to this mode is a separate preregistered hypothesis and is not implicitly combined with the mode.
+
+### Existing Full Matrix
+
+Only when `TPMode = TP_BE_MATRIX`, all 15 scenarios are tested:
 
 1. R1 / BE OFF
 2. R2 / BE OFF
@@ -1561,7 +1648,20 @@ Same mandatory roadmap-update and patch-package protocol.
 ---
 
 
-## Phase 4 Gate
+## Phase 4 Gate & mandatory comparative run
+
+**Logic:** Phase 4 answers the exit-engine question while holding the event definition constant. The comparison is between three top-level exit policies, not an optimizer.
+
+Before Phase 5, run the **Rapid Iteration Sample (2026-01-01 → 2026-06-30)** with:
+- Mode 1: `TPMode=FIXED_R`, `TP_R=2.0`, BreakEven OFF.
+- Mode 2: `TPMode=TP_BE_MATRIX`, all predefined Matrix Scenario IDs, with only the Matrix Scenario ID varied from defaults.
+- Mode 3: `TPMode=LIQUIDITY_STRUCTURE`, first `StructureExitMode=OPPOSING_LIQUIDITY`, then `StructureExitMode=LIQUIDITY_CAPPED_BY_R`; leave `StructureSafetyBufferTicks=1` and `StructureMaxTP_R=2.0` at defaults.
+
+**Input rule:** use every roadmap default unchanged except the Inputs explicitly listed in the run prescription above. The submission must include exact Inputs, all three mode-level results, per-mode trade count, expectancy, cost/R, max DD, NetR mean with one-sided 95% CI, exit-reason distribution and data-quality status.
+
+**Blocking rule:** Phase 5 cannot start until results for all three top-level exit modes are available. No single mode may be selected or discarded from the next phase solely by highest historical NetR; interpretation follows the frozen research gates.
+
+### Phase 4 Gate
 
 Entry/exit behavior must be fully deterministic, executable-quote based, and covered by lifecycle and barrier-ordering fixtures.
 # Phase 5 — Strategy Filters & Optional Risk Extensions
@@ -1687,6 +1787,12 @@ These controls are reported separately from the default daily 3R guard.
 
 ## Phase 5 Gate
 
+**Logic:** Phase 5 isolates whether the approved filters/risk extensions change behavior without silently changing the entry/exit contract.
+
+Before advancing, run the declared filter scenarios on the Rapid Iteration Sample using the frozen Fixed-R control from Phase 4: `TPMode=FIXED_R`, `TP_R=2.0`, BreakEven OFF. Vary only the predefined A/B/C filter-combination state (`OFF`, A, B, C, A+B, A+C, B+C, A+B+C); all other Inputs remain at roadmap defaults. The result packet must include every combination and its exact Inputs plus the standard metrics.
+
+**Blocking rule:** do not advance until every required filter-combination result has been submitted and the phase gate has been classified.
+
 Filters and optional controls must be independently switchable, documented, and excluded from the frozen baseline unless explicitly declared as a research scenario.
 
 ### Completion output
@@ -1703,7 +1809,7 @@ Run the frozen event stream through isolated scenario states using one market-da
 
 ## 6.1 Single market pass
 
-The engine reads the selected tick stream once.
+The engine reads the selected tick stream **exactly once**.
 
 During that pass it constructs:
 
@@ -1717,33 +1823,45 @@ During that pass it constructs:
 
 `Equity Curves`
 
+for every selected research timeframe.
+
+All selected timeframes are advanced from the same tick traversal. A separate execution/backtest pass per timeframe is prohibited.
+
 Reports are generated afterward by grouping the resulting ledger.
 
 January must never trigger a second backtest merely to create the January report.
 
-## 6.2 Matrix scenario architecture
+## 6.2 Scenario and timeframe state architecture
 
-In Full Matrix mode, all 15 TP/BE scenarios run against the same single market-data traversal inside the Research Simulator. No scenario may place live orders.
+All declared TP/BE/confirmation/filter scenarios run against the same single market-data traversal inside the Research Simulator. No scenario may place live orders.
 
-If confirmation/filter scenarios are being compared, each scenario has independent:
+Within that one traversal, each selected timeframe has a completely independent research state containing:
 
 - open positions
-- daily realized R
+- daily risk
+- max positions
+- realized R
 - reserved risk
 - equity
 - drawdown
-- TP
-- BE
+- TP/exit state
+- BE state
 - re-entry state
 - guard state
+- trade ledger
+- event ledger
 
-Market ticks are not reread 15 times.
+No timeframe may read another timeframe's strategy state. Only the normalized tick stream is shared.
+
+The live adapter must not execute multiple timeframes simultaneously. Live trading selects one fixed timeframe and one frozen configuration.
 
 ## 6.3 Exact tested ranges
 
-### Experimental
+### Rapid Iteration Sample
 
-`2026-01-01 → 2026-09-28`
+`2026-01-01 → 2026-06-30`
+
+Used for repeated short runs and early phase gates only. It is not the extended robustness test.
 
 ### Extended Development
 
@@ -1753,7 +1871,9 @@ plus:
 
 `2026-01-01 → 2026-09-28`
 
-### OOS
+The 2026 H2 extension is entered only after the rapid-iteration gates have passed.
+
+### Historical Blind OOS
 
 `2025-01-01 → 2025-12-31`
 
@@ -1765,6 +1885,7 @@ Minimum:
 
 - Trade ID
 - Scenario ID
+- TimeframeID
 - Year
 - Month
 - Day
@@ -1961,28 +2082,44 @@ The report must show:
 
 This allows the user to see whether the strategy edge survives costs.
 
-## 6.12 Scenario-comparison output
+## 6.12 Scenario- and timeframe-comparison output
 
-The engine outputs all requested TP/BE scenarios side by side.
+The engine outputs all requested TP/BE/exit scenarios and all selected timeframes side by side.
 
-It must not automatically select the scenario with the highest Net R.
+For each timeframe, report separately:
 
-Scenario comparison includes:
-
+- event count
 - trade count
-- win rate
 - expectancy
+- costs in R
+- max drawdown
+- mean NetR with one-sided 95% CI
+- win rate
 - PF
-- Net R
-- max DD
 - max DD touches
 - max loss streak
-- cost/R
 - MAE/MFE
 
-## Phase 6 Gate
+A comparison table must place timeframes side by side without summing their equity curves, NetR or drawdowns.
 
-One tick stream must generate the complete ledger and all scenario outputs without scenario-dependent event creation or destruction.
+Each selected timeframe counts as one preregistered multiple-testing experiment/trial. This is a trial-control rule, not a claim that the underlying price observations are statistically independent.
+
+The engine must never auto-select a “best timeframe” or “best exit mode”.
+
+The live report contains one fixed timeframe only; the multi-timeframe comparison is research-only.
+
+
+## 6.13 Phase 6 gate and mandatory full-run packet
+
+**Logic:** Phase 6 proves that all declared scenarios/timeframes can be simulated from one market-data pass and reconciled into separate ledgers and reports.
+
+Before Phase 7, execute the complete Rapid Iteration Sample with the declared `TimeframeSet` and all required research scenarios. The run packet must include the exact Inputs used, TimeframeID for every output, scenario count/trial count, side-by-side timeframe table, separate equity curves, and the full ledger checksum.
+
+**Blocking rule:** Phase 7 cannot start until every declared timeframe and every required scenario output has been submitted and the one-pass/state-isolation checks pass.
+
+### Phase 6 Gate
+
+One tick stream must generate the complete ledger and all scenario outputs without scenario-dependent or timeframe-dependent event creation/destruction.
 
 ### Completion output
 
@@ -2141,7 +2278,13 @@ Run controlled robustness variants for:
 These are stress tests, not historical claims. The exact stress values must be declared before the run and included in the final report.
 
 
-## Phase 7 Gate
+## Phase 7 Gate & mandatory validation packet
+
+**Logic:** Phase 7 prevents a plausible-looking backtest from passing while the execution engine and independent reference disagree.
+
+Before Phase 8, submit the deterministic fixture results, Python/MT5 reconciliation on declared short intervals, statistical diagnostics, and the exact Inputs/Run Card used. Every declared timeframe must be checked; missing one timeframe is a blocking omission.
+
+**Blocking rule:** no extended-development or holdout run is interpreted until the validation packet is complete and all blocking checks pass.
 
 All blocking fixtures pass and the MQL5 engine reconciles with the independent reference within predefined tolerance before performance interpretation.
 # Phase 8 — Robustness, Freeze, Development & Historical Holdout
@@ -2255,7 +2398,13 @@ Must contain:
 - compile/test logs
 - known limitations
 
-## Phase 8 Gate
+## Phase 8 Gate & final broad-run packet
+
+**Logic:** Phase 8 is the first deliberately broad historical examination. Its purpose is robustness and freeze confirmation, not rapid parameter iteration.
+
+Submit one complete broad-run packet covering the frozen configuration on the declared extended-development range, the separate 2025 holdout, every required timeframe/report, and the final stress/sensitivity outputs. Exact Inputs must be recorded; no unlisted input may be changed.
+
+**Blocking rule:** if any broad-run output is missing, or if holdout data affected selection, Phase 8 is not complete.
 
 Robustness results, freeze state, development runs and 2025 holdout are reproducible and no holdout observation feeds rule selection.
 
@@ -2335,7 +2484,11 @@ Store:
 ---
 
 
-## Phase 9 Gate
+## Phase 9 Gate & forward-run packet
+
+**Logic:** Phase 9 is operational validation, not another optimization cycle.
+
+Before changing deployment state, submit the fault-test results, exact frozen Inputs, account/rule profile, and shadow/demo reconciliation. Live mode must contain exactly one fixed timeframe.
 
 Operational fault tests pass, account/rule profile is verified, and the frozen configuration enters forward validation with immutable observation logs.
 # Research & Implementation References
@@ -2405,6 +2558,15 @@ Use exactly this compact structure inside the roadmap:
 
 # Roadmap Update Log
 
+## Update 2026-09-28 — Timeframe, exit-policy and phase-gate expansion
+
+- Added `TimeframeSet` with default `M5,M15,H1`; allowed values `M1/M5/M15/M30/H1`.
+- One tick stream is consumed once for all selected research timeframes; each timeframe has fully isolated research state and reporting. Live trading remains one fixed timeframe only.
+- Added three top-level exit policies: `FIXED_R`, `TP_BE_MATRIX`, and `LIQUIDITY_STRUCTURE`, with deterministic opposing-liquidity and liquidity-capped-by-R variants.
+- Added mandatory phase-gate result packets: test-heavy phases cannot advance until every declared required output is submitted with exact Inputs; unspecified Inputs remain at roadmap defaults.
+- Added Rapid Iteration Sample `2026-01-01 → 2026-06-30`; extended development remains `2020-07-01 → 2024-12-31` plus 2026, 2025 remains untouched OOS.
+- Added side-by-side timeframe reporting and explicit multiple-testing treatment; no automatic best-timeframe selection.
+
 ## Update 2026-09-28 — Final audit corrections
 
 - Removed untouched-OOS ranking/tie-breaking; OOS is confirmation/reporting only.
@@ -2428,13 +2590,16 @@ The project is complete only when:
 - liquidity clustering and lifecycle are deterministic
 - pre-sweep touches are measurable
 - sweep detection has no ambiguous opening-above/below case
-- M1 is the default and timeframe is configurable
+- TimeframeSet defaults to M5,M15,H1 and allows M1/M5/M15/M30/H1
+- research timeframes run in one tick pass with isolated state; live uses one fixed timeframe
 - Broker Server Time is authoritative
 - all three trading-session modes work
 - real ticks are used whenever available and any fallback is reported
 - actual Bid/Ask and same-tick spread are used
 - XAUUSD strategy pip size is explicit
 - entry/SL/TP/BE are deterministic
+- Fixed-R, TP/BE Matrix, and Liquidity-Structure exit modes are explicit, configurable and reason-coded
+- the liquidity-structure mode never uses discretionary engine judgment
 - RECLAIM_CLOSE and NEXT_BAR_EXTREME_CONFIRM have atomic lifecycle rules
 - LIVE_NATIVE_STOP is the primary execution profile and RESEARCH_MID_STOP is sensitivity only
 - PlannedRisk1R, RealizedStopLossR and ExecutionDeviationR are distinct
@@ -2453,13 +2618,17 @@ The project is complete only when:
 - max concurrent positions defaults to 3
 - the remaining daily risk capacity prevents new trades from exceeding the 3R risk budget
 - daily profit target exists at 9R but is OFF by default
-- Single TP mode defaults to 2R
-- Full Matrix mode runs all 15 requested TP/BE scenarios for exploratory sensitivity only and cannot determine the final verdict
+- Fixed-R mode defaults to 2R with BE OFF
+- TP/BE Matrix mode runs all 15 currently declared predefined scenarios for exploratory sensitivity only and cannot determine the final verdict
+- Liquidity-Structure mode is a separate deterministic research hypothesis with opposing-liquidity and liquidity-capped-by-R variants
 - Re-entry defaults to one attempt and supports 1–4 attempts
 - the three approved strategy filters exist and are OFF by default; News and Spread are not strategy filters
 - optional time/directional/total-DD/streak controls exist without altering baseline defaults
-- a single market-data pass generates the full ledger and scenario outputs
-- monthly, annual and grand-total reports are produced from that ledger
+- a single market-data pass generates the full ledger and scenario outputs across all selected research timeframes
+- each timeframe has independent event/trade/risk/equity state and its own reports
+- monthly, annual and grand-total reports are produced from that ledger without summing timeframes
+- side-by-side timeframe comparison reports event count, expectancy, costs/R, max DD and mean NetR with CI
+- each declared timeframe is counted as a preregistered multiple-testing trial; no automatic best-timeframe selection
 - Long/Short counts are explicit
 - MaxDD and MaxDD Touch Count are explicit for every reporting period
 - MAE/MFE/cost/execution metrics are retained
