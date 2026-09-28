@@ -320,6 +320,40 @@ SignalBarPriceSource = BID
 
 All bar-derived structure uses BID consistently. Choosing LAST in a future research version creates a new research version. Execution remains Bid/Ask-specific.
 
+### 0B.17 Confirmation lifecycle is atomic
+
+For NEXT_BAR_EXTREME_CONFIRM, the confirmation candle is the single candle immediately following the sweep candle.
+
+If confirmation fails, the setup expires permanently. A later candle may not reinterpret the setup as confirmed.
+
+### 0B.18 Gap-through handling
+
+If an executable quote jumps over both TP and stop/reference barriers between observed ticks, the simulator must not invent the intratick path.
+
+Classify as GAP_CROSSED_BARRIER and apply the declared conservative execution rule. Keep the raw event visible for sensitivity analysis.
+
+### 0B.19 Target-room geometry
+
+For a Long, a valid opposing high-side pool blocks the target when the selected TP is inside or beyond that pool. Require TP < OpposingPoolLower.
+
+For a Short, require TP > OpposingPoolUpper.
+
+Only opposing pools known and eligible at the exact entry timestamp may be used.
+
+### 0B.20 Economic-edge threshold
+
+An OOS lower confidence bound above zero is a statistical gate, not proof of economic significance.
+
+MinEconomicEdgeR must be pre-registered before final selection. It is a research policy parameter and may not be chosen after OOS results are seen.
+
+### 0B.21 Stable event identity
+
+Every candidate receives a stable EventID independent of scenario. Scenario reports may reuse the same EventID, but the underlying market event is immutable.
+
+### 0B.22 Cost attribution
+
+Cost burden is decomposed into entry spread, exit spread, commission, swap, slippage and gap deviation. A single aggregate cost field must not replace these components.
+
 # 1. Non-Negotiable Architecture Rules
 
 These rules apply to every phase.
@@ -722,6 +756,8 @@ Spread is separately reported by bucket even when the spread filter is OFF.
 Repeat the lightweight event study over 2020-07-01 → 2024-12-31 with 2025 excluded. This tests whether the raw sweep/reclaim behavior is unique to the 2026 discovery sample.
 
 No optimization is allowed.
+
+The event study also reports fixed forward horizons such as 1, 3, 5, 10 and 20 completed bars, plus first-barrier outcomes when valid stop/target references exist. Horizon definitions are frozen before analysis.
 
 ## 1.16 Phase-1 foundation gate
 
