@@ -213,15 +213,13 @@ Input:
 
 ### Mode 1 — Full Day Except Late Spread Window (default)
 
-New entries allowed:
+New entries are allowed only while the symbol is actually tradeable according to the broker symbol-session schedule.
 
-`Market Open → 21:30`
+StrategyEntryWindow = ActualTradeSession ∩ ConfiguredStrategyWindow
 
-New entries blocked:
+The default late-spread block remains `21:30 → next tradable session`.
 
-`21:30 → Market Close`
-
-New entries resume after the next tradable market open.
+Do not hard-code a universal market open/close; obtain the tradable schedule from MT5 symbol session data.
 
 ### Mode 2 — NY Window
 
@@ -266,7 +264,14 @@ The engine must verify and report:
 - contract size
 - tick value
 
-MT5 documentation states that “real ticks” are the most accurate tester source when available, but if real tick history is unavailable or inconsistent with minute bars, the tester can use generated ticks for the affected interval. The final report must expose this rather than silently presenting the run as 100% real-tick data.
+MT5 documentation states that real ticks are the preferred high-fidelity tester source when available, but affected intervals can fall back to generated ticks. The final report must expose actual coverage rather than claiming 100% real-tick history.
+
+Pre-registered data gates:
+
+MaxFallbackMinuteShare = 1%
+MaxCriticalDataGapMinutes = 0
+
+A run exceeding these gates is DATA-FAILED unless an exception was documented before interpreting results.
 
 ## 1.5 Symbol price units
 
@@ -297,6 +302,9 @@ For every event tick, record:
 - Spread = Ask - Bid
 - Last if available
 - tick flags if available
+- declared SignalBarPriceSource
+
+All OHLC-derived logic (sweep, swing, equal levels, ATR, HTF structure) must use the same declared bar price source. MidPrice is reserved for the explicitly named research-stop variant only.
 
 Opening:
 
@@ -348,6 +356,17 @@ Historical backtests must report whether they use:
 - a dated historical commission schedule.
 
 The research report must never present current costs applied retrospectively as if they were historical broker costs.
+
+### Entry spread / cost admission gate
+
+Inputs:
+
+MaxEntrySpreadEnabled = true
+MaxEntrySpreadStrategyPips
+MaxEntrySpreadToInitialRiskPct
+MaxEntryCostR
+
+A candidate is rejected before admission when the observed entry spread or ex-ante measurable cost violates the frozen gate. Rejected candidates remain in the ledger with a rejection reason. Numeric thresholds are frozen before OOS.
 
 ## 1.8 Position sizing and symbol constraints
 
@@ -507,7 +526,28 @@ For a Long:
 
 No third confirmation pattern is introduced in the base research.
 
-## 1.14 Completion gate for Phase 1
+## 1.14 Macro-event and spread observability
+
+News is first a stratification variable, not an assumed predictive edge.
+
+Inputs:
+
+NewsMode = OBSERVE_ONLY
+NewsBlockMinutesBefore = 15
+NewsBlockMinutesAfter = 15
+NewsImportance = HIGH
+
+A blocking mode is allowed only when the event-calendar source, timestamp basis, importance mapping and missing-data behavior are validated and frozen. Without a validated calendar, remain in OBSERVE_ONLY.
+
+Spread is separately reported by bucket even when the spread filter is OFF.
+
+## 1.15 Development event-study replication
+
+Repeat the lightweight event study over 2020-07-01 → 2024-12-31 with 2025 excluded. This tests whether the raw sweep/reclaim behavior is unique to the 2026 discovery sample.
+
+No optimization is allowed.
+
+## 1.16 Phase-1 foundation gate
 
 The event study does not declare the strategy profitable.
 
@@ -543,7 +583,7 @@ Build all four requested liquidity source types and remove ambiguity around what
 
 ## 2.1 Liquidity source types
 
-All four exist as independent Inputs:
+All four exist as independent Inputs. They are price-level proxies, not direct order-book observations:
 
 1. `PreviousDayHighLow`
 2. `PreviousSessionHighLow`
@@ -627,6 +667,28 @@ Example:
 must not produce three independent setups at essentially the same price.
 
 The ledger retains all source tags.
+
+## 2.6A Multi-pool sweep policy
+
+A single large candle can cross multiple non-clustered price-level proxies. The engine must not silently create multiple trades from one candle.
+
+Input:
+
+MultiPoolSweepPolicy = FIRST_CROSSED_LEVEL
+
+Alternative research-only variant:
+
+DEEPEST_PENETRATION_LEVEL
+
+Only one policy is active per scenario and the policy ID is stored in the ledger.
+
+## 2.6B Equal-level tolerance modes
+
+Baseline:
+
+EqualLevelToleranceMode = FIXED_PIPS
+
+ATR_NORMALIZED may exist only as a separately declared research variant and may not be chosen after observing results.
 
 ## 2.7 Level lifecycle
 
@@ -806,7 +868,15 @@ After the trigger:
 - Long exits at Bid on the trigger tick.
 - Short exits at Ask on the trigger tick.
 
-The ledger records both the reference trigger and executable exit quote.
+This MidPrice trigger is RESEARCH ONLY.
+
+### Live execution
+
+LiveStopMode = BROKER_NATIVE_QUOTE_SL
+
+The live adapter must place a broker-native protective SL where the venue permits it. A virtual-only stop is not an acceptable sole production safety mechanism.
+
+The ledger stores StopModel = MID_RESEARCH or NATIVE_QUOTE so the two performance series cannot be mixed silently.
 
 ## 3.4 Minimum execution validity
 
@@ -824,11 +894,11 @@ The research engine must not fabricate an executable price that would be illegal
 
 At entry:
 
-`RiskAmount1R = absolute planned net loss if initial stop is triggered`
+RiskAmount1R = modeled loss between executable entry and initial stop, plus only costs deterministically known at admission.
 
-under the configured execution/cost model.
+Use OrderCalcProfit / equivalent symbol-specific economics rather than a hard-coded pip-value shortcut. Future spread, slippage and swap are not treated as knowable at entry.
 
-The R amount is dynamic.
+The R amount is dynamic. RiskBasis = START_OF_BROKER_DAY_EQUITY.
 
 Example:
 
@@ -880,17 +950,17 @@ Only when selected, all 15 scenarios are tested:
 
 For the selected TP scenario:
 
-`TargetNetProfit = TP_R × RiskAmount1R`
+TargetGrossProfit = TP_R × RiskAmount1R
 
-The TP price is solved in the executable exit-quote domain.
+The TP price is solved in the executable exit-quote domain using the exact entry quote and known admission-time costs.
 
 Long TP is triggered from Bid.
 
 Short TP is triggered from Ask.
 
-The engine uses the exact entry quote, stop-derived R amount, configured commission model, and configured slippage/cost assumptions when constructing the target.
+Future exit spread, slippage and swap are not treated as knowable when constructing a static TP price; they are applied at execution and reported in NetR.
 
-A result is classified as a full TP only when the realized modeled net profit reaches the configured target.
+The report distinguishes TP_PRICE_HIT from NET_TARGET_REACHED.
 
 The report separately retains:
 
@@ -906,19 +976,11 @@ so the effect of costs is visible rather than hidden.
 
 ## 3.8 Break-even definition
 
-The matrix labels:
+The matrix labels BE R1/BE R2/BE R3/BE R4 mean activation at the specified positive price-R threshold under executable quote semantics.
 
-`BE R1`
+BETriggerBasis = PRICE_R
 
-`BE R2`
-
-`BE R3`
-
-`BE R4`
-
-mean the BE transition activates when the trade reaches the specified positive R threshold under the configured executable/net-R model.
-
-After the trigger, the stop is moved to a **cost-neutral break-even reference**, not blindly to the raw entry price.
+After activation, move to a cost-neutral break-even reference only when legal under symbol stop/freeze constraints. Otherwise record BE_BLOCKED_BY_SYMBOL_RULE.
 
 This avoids calling a trade “risk free” while known commissions would still guarantee a small loss.
 
@@ -963,6 +1025,11 @@ A retry requires:
 `new valid reclaim/confirmation`
 
 A retry on the same candle/event is prohibited.
+
+ReEntryCooldownBars = 1
+MaxReEntriesPerPoolPerDay = 3
+
+These are anti-churn guardrails and are frozen before OOS.
 
 TP or BE permanently ends that setup lifecycle.
 
