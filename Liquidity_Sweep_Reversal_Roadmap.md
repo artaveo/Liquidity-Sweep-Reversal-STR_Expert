@@ -1230,9 +1230,9 @@ Spread is separately reported by bucket even when the spread filter is OFF.
 
 ## 3.4 Development event-study replication
 
-Repeat the lightweight event study over 2020-07-01 → 2024-12-31 with 2025 excluded. This tests whether the raw sweep/reclaim behavior is unique to the 2026 discovery sample.
+The multi-year replication is **deferred to Phase 8**. Phase 3 must use only the Rapid Iteration Sample so repeated development runs remain short.
 
-No optimization is allowed.
+Phase 3 may repeat the same event-study logic across the declared TimeframeSet, but must not expand the date range beyond 2026-01-01 → 2026-06-30.
 
 The event study also reports fixed forward horizons such as 1, 3, 5, 10 and 20 completed bars, plus first-barrier outcomes when valid stop/target references exist. Horizon definitions are frozen before analysis.
 
@@ -1653,9 +1653,9 @@ Same mandatory roadmap-update and patch-package protocol.
 **Logic:** Phase 4 answers the exit-engine question while holding the event definition constant. The comparison is between three top-level exit policies, not an optimizer.
 
 Before Phase 5, run the **Rapid Iteration Sample (2026-01-01 → 2026-06-30)** with:
-- Mode 1: `TPMode=FIXED_R`, `TP_R=2.0`, BE OFF.
-- Mode 2: `TPMode=TP_BE_MATRIX`, all predefined Matrix Scenario IDs.
-- Mode 3: `TPMode=LIQUIDITY_STRUCTURE`; report both declared StructureExitMode variants.
+- Mode 1: `TPMode=FIXED_R`, `TP_R=2.0`, BreakEven OFF.
+- Mode 2: `TPMode=TP_BE_MATRIX`, all predefined Matrix Scenario IDs, with only the Matrix Scenario ID varied from defaults.
+- Mode 3: `TPMode=LIQUIDITY_STRUCTURE`, first `StructureExitMode=OPPOSING_LIQUIDITY`, then `StructureExitMode=LIQUIDITY_CAPPED_BY_R`; leave `StructureSafetyBufferTicks=1` and `StructureMaxTP_R=2.0` at defaults.
 
 **Input rule:** use every roadmap default unchanged except the Inputs explicitly listed in the run prescription above. The submission must include exact Inputs, all three mode-level results, per-mode trade count, expectancy, cost/R, max DD, NetR mean with one-sided 95% CI, exit-reason distribution and data-quality status.
 
@@ -1789,7 +1789,7 @@ These controls are reported separately from the default daily 3R guard.
 
 **Logic:** Phase 5 isolates whether the approved filters/risk extensions change behavior without silently changing the entry/exit contract.
 
-Before advancing, run the declared filter scenarios on the Rapid Iteration Sample using the same frozen exit policy family from Phase 4. The result packet must include all predefined filter combinations required by the roadmap, their exact Inputs, and the standard metrics. Unchanged Inputs stay at roadmap defaults.
+Before advancing, run the declared filter scenarios on the Rapid Iteration Sample using the frozen Fixed-R control from Phase 4: `TPMode=FIXED_R`, `TP_R=2.0`, BreakEven OFF. Vary only the predefined A/B/C filter-combination state (`OFF`, A, B, C, A+B, A+C, B+C, A+B+C); all other Inputs remain at roadmap defaults. The result packet must include every combination and its exact Inputs plus the standard metrics.
 
 **Blocking rule:** do not advance until every required filter-combination result has been submitted and the phase gate has been classified.
 
