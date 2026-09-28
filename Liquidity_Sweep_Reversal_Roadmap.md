@@ -1966,13 +1966,15 @@ Evaluate the frozen strategy under:
 
 No deployment decision may rely only on the research-only MidPrice trigger.
 
-## 6.15 Final OOS
+## 6.15 Historical blind holdout audit
 
 Run the frozen configuration on:
 
 `2025-01-01 → 2025-12-31`
 
-No OOS observation may feed:
+Because 2025 is chronologically prior to the current 2026 discovery window, this is labeled a **historical blind holdout**, not the project's only forward OOS series.
+
+No holdout observation may feed:
 
 - rule selection
 - filter selection
@@ -2198,6 +2200,15 @@ A lightweight event study happens before the complete execution/scenario engine 
 ### 11. Statistical validation
 Bootstrap confidence intervals, trade-sequence Monte Carlo, sensitivity, independent reference reconciliation, and multiple-testing diagnostics were added.
 
+### 13. V3/V4 strategy-logic hardening
+The roadmap now defines immutable event identity, explicit liquidity-pool geometry, exact penetration/reclaim formulas, touch counting, level freshness, target-room eligibility, gap handling, aggregate risk ceilings, external account-rule compliance, and complete admission decision traces.
+
+### 14. Risk-model correction
+Planned risk is separated from realized stop loss and execution deviation so the Research MidPrice stop cannot masquerade as an exact -1R live loss.
+
+### 15. Holdout chronology correction
+2025 is now a historical blind holdout; 2026-09-29 onward is the true chronological forward OOS series.
+
 ### 12. Reporting
 The requested MaxDD Touch Count remains, but the report now also exposes starting-underwater drawdown so monthly/yearly boundaries cannot create misleading standalone DD figures.
 
@@ -2207,7 +2218,11 @@ The requested MaxDD Touch Count remains, but the report now also exposes startin
 
 The project is complete only when:
 
-- the four requested Liquidity sources work independently
+- the four requested liquidity proxy sources work independently
+- pool geometry, clustering tolerance and event consumption are deterministic
+- penetration, reclaim and pre-sweep touch formulas are explicit
+- level freshness prevents sweep-time/future information leakage
+- one immutable EventID represents one market event across all research scenarios
 - liquidity clustering and lifecycle are deterministic
 - pre-sweep touches are measurable
 - sweep detection has no ambiguous opening-above/below case
@@ -2218,10 +2233,18 @@ The project is complete only when:
 - actual Bid/Ask and same-tick spread are used
 - XAUUSD strategy pip size is explicit
 - entry/SL/TP/BE are deterministic
+- RECLAIM_CLOSE and NEXT_BAR_EXTREME_CONFIRM have atomic lifecycle rules
+- research MidPrice stop and live broker-native stop are explicitly separated
+- PlannedRisk1R, RealizedStopLossR and ExecutionDeviationR are distinct
+- TP_PRICE_HIT and NET_TARGET_REACHED are distinct outcomes
+- gap-through and ambiguous timestamp execution are explicitly classified
 - initial SL cannot be triggered by spread expansion alone in the research model
 - TP is cost-aware and executable-quote based
 - 1R is dynamic
 - position sizing respects symbol constraints and risk
+- aggregate and directional worst-case open-risk ceilings are enforced
+- the external AccountRuleEngine is separate from the internal strategy risk budget
+- decision traces record every admission/rejection reason
 - daily loss guard defaults to 3R and blocks new risk without force-closing open trades from floating DD alone
 - max concurrent positions defaults to 3
 - the remaining daily risk capacity prevents new trades from exceeding the 3R risk budget
@@ -2237,8 +2260,12 @@ The project is complete only when:
 - MaxDD and MaxDD Touch Count are explicit for every reporting period
 - MAE/MFE/cost/execution metrics are retained
 - event-study diagnostics exist
-- 2025 remains a clean OOS year
+- 2025 remains untouched as the historical blind holdout
+- true chronological OOS begins 2026-09-29 and is kept as a forward-validation series
 - Monte Carlo/bootstrap/sensitivity diagnostics are available
+- multiple-testing-aware validation is available when candidate selection occurs
+- deterministic fixtures and runtime invariants are blocking tests
+- DataManifest makes every result reproducible
 - the MT5 engine reconciles against an independent reference implementation
 - every code-changing phase updates this exact roadmap file
 - the roadmap is never renamed
