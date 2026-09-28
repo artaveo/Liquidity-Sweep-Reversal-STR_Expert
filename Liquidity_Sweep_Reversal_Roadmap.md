@@ -1139,6 +1139,26 @@ the selected TP must be before the nearest relevant opposing liquidity in the mo
 
 If no valid opposing liquidity exists, the trade is not rejected solely for absence of a target reference.
 
+## 4.3A Filter D — Macro News
+
+Inputs:
+
+UseNewsFilter = false
+NewsBlockMinutesBefore = 15
+NewsBlockMinutesAfter = 15
+NewsImportance = HIGH
+
+Default is OFF / OBSERVE_ONLY. Blocking is permitted only with a validated event calendar and frozen mapping of USD-sensitive high-impact events.
+
+## 4.3B Filter E — Spread / Execution Quality
+
+Inputs:
+
+UseSpreadFilter = true
+MaxEntrySpreadToInitialRiskPct
+
+This is a transaction-cost gate, not a predictive feature. Rejected opportunities remain in the candidate ledger.
+
 ## 4.4 Filter combinations
 
 For research, the engine can run:
@@ -1216,7 +1236,7 @@ January must never trigger a second backtest merely to create the January report
 
 ## 5.2 Matrix scenario architecture
 
-In Full Matrix mode, all 15 TP/BE scenarios run against the same single market-data traversal.
+In Full Matrix mode, all 15 TP/BE scenarios run against the same single market-data traversal inside the Research Simulator. No scenario may place live orders.
 
 If confirmation/filter scenarios are being compared, each scenario has independent:
 
@@ -1329,6 +1349,14 @@ For every month:
 - MFE summary
 - Average holding duration
 - Spread/cost summary
+- Median/P90/P99 NetR
+- Drawdown duration
+- Recovery factor
+- Return concentration by day/month/year
+- Time-in-market
+- Margin utilization
+- Prop-rule breach and near-breach counts
+- Candidate rejection counts by reason
 
 ## 5.6 Annual report
 
@@ -1499,7 +1527,40 @@ Must prove:
 - no month/year backtest reruns for reporting
 - independent scenario state isolation
 
-## 6.2 Python/reference reconciliation
+## 6.2 Deterministic state-machine fixtures
+
+Before long historical runs, blocking fixtures must cover:
+
+- valid short sweep
+- valid long sweep
+- wrong-side candle open
+- spread expansion with unchanged MidPrice
+- spread contraction with unchanged reference price
+- TP/SL event ordering
+- BE trigger followed by stop-out
+- duplicate source tags inside one pool
+- one large candle crossing two non-clustered pools
+- daily risk reservation
+- restart with open trade
+- market-closed boundary
+- tick-size and volume-step rounding
+
+Each fixture has an expected ledger and is a blocking test.
+
+Runtime invariants include:
+
+ReservedWorstCaseRiskR <= RemainingDailyRiskBudget
+ConsumedPool -> no duplicate same-event trade
+ConfirmedSwing -> no future information
+LivePositionState == BrokerReconciledPositionState
+
+## 6.3 Multiple-testing-aware validation
+
+When candidate selection is performed, use a suitable multiple-testing-aware method such as White's Reality Check and/or Hansen's SPA in addition to Deflated Sharpe / PBO diagnostics.
+
+When outcome windows overlap, use purging/embargo or equivalent temporal leakage control. Random K-fold is prohibited for overlapping financial labels.
+
+## 6.4 Python/reference reconciliation
 
 Build a small independent reference implementation of the core event/position state machine.
 
@@ -1521,7 +1582,7 @@ Any discrepancy outside a predefined numerical tolerance becomes a blocking defe
 
 This is an independent cross-check, not a second production engine.
 
-## 6.3 Bootstrap and Monte Carlo
+## 6.5 Bootstrap and Monte Carlo
 
 The research package must include:
 
@@ -1547,7 +1608,7 @@ Use bootstrap confidence intervals for:
 
 The purpose is to show uncertainty, not to manufacture a probability of future profit.
 
-## 6.4 Multiple-testing control
+## 6.6 Multiple-testing control
 
 The project deliberately contains multiple predefined scenarios.
 
@@ -1561,7 +1622,7 @@ Therefore:
 
 The 15 TP/BE matrix is treated as a **research matrix**, not as permission to optimize 15 results and keep only the best one.
 
-## 6.5 Parameter sensitivity
+## 6.7 Parameter sensitivity
 
 Predeclare small, non-optimized sensitivity checks around structural parameters.
 
@@ -1574,7 +1635,7 @@ Sensitivity results are reported as stability ranges.
 
 The engine must not search arbitrary hundreds of parameter values.
 
-## 6.6 Execution stress validation
+## 6.8 Execution stress validation
 
 Run controlled robustness variants for:
 
@@ -1586,7 +1647,7 @@ Run controlled robustness variants for:
 
 These are stress tests, not historical claims. The exact stress values must be declared before the run and included in the final report.
 
-## 6.7 Regime robustness
+## 6.9 Regime robustness
 
 Within the Development data, report performance separately across meaningful historical blocks.
 
@@ -1604,13 +1665,13 @@ without using these splits as a hidden optimizer.
 
 The objective is to determine whether the behavior exists across more than one market regime.
 
-## 6.8 Secondary-symbol robustness
+## 6.10 Secondary-symbol robustness
 
 After XAUUSD core rules are frozen, the same deterministic engine may be run on XAGUSD as a **robustness check**, not as a parameter-selection tool for XAUUSD.
 
 The secondary symbol result cannot be used to alter the already-frozen XAUUSD OOS rule set.
 
-## 6.9 Data-source robustness
+## 6.11 Data-source robustness
 
 Primary research remains the target broker/tester feed because execution spread and symbol rules are broker-specific.
 
@@ -1622,7 +1683,7 @@ A secondary historical source may be used only for:
 
 It must not be mixed tick-by-tick with the target broker feed.
 
-## 6.10 Experimental freeze
+## 6.12 Experimental freeze
 
 After the experimental phase:
 
@@ -1632,7 +1693,7 @@ the strategy configuration intended for the extended run is frozen.
 
 Any material strategy-rule change after seeing extended-development performance creates a new research version and must not be silently folded into the old version.
 
-## 6.11 Extended development test
+## 6.13 Extended development test
 
 Run the frozen version on:
 
@@ -1644,7 +1705,16 @@ and:
 
 Exclude all of 2025.
 
-## 6.12 Final OOS
+## 6.14 Paired execution-profile robustness
+
+Evaluate the frozen strategy under:
+
+1. RESEARCH_MID_STOP
+2. LIVE_NATIVE_STOP
+
+No deployment decision may rely only on the research-only MidPrice trigger.
+
+## 6.15 Final OOS
 
 Run the frozen configuration on:
 
@@ -1658,7 +1728,7 @@ No OOS observation may feed:
 - scenario pruning
 - code changes intended to improve the OOS result
 
-## 6.13 Final research package
+## 6.16 Final research package
 
 Must contain:
 
@@ -1684,6 +1754,102 @@ Must contain:
 ### Completion output
 
 Same mandatory roadmap-update and patch-package protocol.
+
+---
+
+# Phase 7 — Production Hardening, Shadow Run & True Forward Validation
+
+## Goal
+
+Prove the EA remains correct and safe under operational failures before live deployment.
+
+## 7.1 Mandatory live controls
+
+- broker-native protective SL where supported
+- account/rule-profile daily-loss hard stop
+- maximum concurrent positions and symbol exposure
+- stale-tick detector
+- spread-anomaly kill switch
+- trading-session/permission check
+- duplicate-order protection
+- magic-number isolation
+- restart/reconnect recovery
+- broker-position reconciliation
+- execution reconciliation through OnTradeTransaction
+- emergency disable switch
+- structured logs
+
+## 7.2 Fault-injection tests
+
+Test:
+
+- terminal restart with open position
+- network interruption around submission
+- delayed or rejected order
+- duplicate/partial transaction notifications
+- symbol becoming non-tradeable
+- spread jump
+- missing ticks
+- server-time/DST transition
+
+Recovery must use broker-confirmed state, not an in-memory assumption.
+
+## 7.3 True forward validation
+
+Starting 2026-09-29, the frozen configuration enters:
+
+SHADOW -> DEMO -> LIVE_AFTER_APPROVAL
+
+Forward data records actual spread, entry/exit slippage, latency, rejects, downtime, restarts and reconciliation errors. These observations may inform a future research version but never retroactively alter the 2025 OOS.
+
+## 7.4 Deployment gate
+
+Deployment requires:
+
+- hard research gates passed
+- native-stop robustness documented
+- operational fault tests passed
+- exact account/rule profile verified
+- shadow/demo behavior reconciled
+- no unresolved blocking defect
+
+## 7.5 Release artifact
+
+Store:
+
+- code commit SHA
+- roadmap hash
+- exact inputs
+- symbol specification snapshot
+- deployment configuration hash
+- test logs
+- known limitations
+
+---
+
+# Research & Implementation References
+
+The roadmap is informed by:
+
+- MQL5 Strategy Tester / real ticks: https://www.mql5.com/en/docs/runtime/testing
+- MQL5 symbol properties: https://www.mql5.com/en/docs/constants/environment_state/marketinfoconstants
+- MQL5 OrderCalcProfit: https://www.mql5.com/en/docs/trading/ordercalcprofit
+- MQL5 OrderCalcMargin: https://www.mql5.com/en/docs/trading/ordercalcmargin
+- MQL5 OrderCheck: https://www.mql5.com/en/docs/trading/ordercheck
+- MQL5 OnTradeTransaction: https://www.mql5.com/en/docs/event_handlers/ontradetransaction
+- MQL5 symbol trading-session schedule: https://www.mql5.com/en/docs/marketinformation/symbolinfosessiontrade
+- Osler, Currency Orders and Exchange Rate Dynamics: https://onlinelibrary.wiley.com/doi/10.1111/1540-6261.00588
+- Cai, Cheung & Wong, What Moves the Gold Market?: https://doi.org/10.1002/1096-9934(200103)21:3<257::AID-FUT4>3.0.CO;2-W
+- Batten & Lucey, Volatility in the Gold Futures Market: https://doi.org/10.1080/13504850701719991
+- Bailey & Lopez de Prado, The Deflated Sharpe Ratio: https://doi.org/10.3905/jpm.2014.40.5.094
+- Bailey et al., Probability of Backtest Overfitting: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253
+- Sullivan, Timmermann & White, Data-Snooping, Technical Trading Rule Performance, and the Bootstrap: https://doi.org/10.1111/0022-1082.00163
+- Adam H. Grimes, How to Trade Support and Resistance Levels: https://adamhgrimes.com/how-to-trade-support-and-resistance-levels/
+- FundedNext server time: https://help.fundednext.com/en/articles/8019672-what-is-fundednext-s-server-time
+- FundedNext daily-loss calculation: https://help.fundednext.com/en/articles/8019811-how-can-i-calculate-the-daily-loss-limit
+- FundedNext metals commission: https://help.fundednext.com/en/articles/10701368-what-are-the-commission-charges-for-stellar-challenges-and-fundednext-accounts
+
+Practitioner sources are for hypothesis generation and terminology; empirical claims must be backed by research-grade evidence or platform/broker documentation.
 
 ---
 
