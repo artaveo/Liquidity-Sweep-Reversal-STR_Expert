@@ -266,20 +266,63 @@ Aggregate worst-case exposure includes all open trades plus declared execution b
 
 The internal strategy 3R guard is a research risk budget, not a substitute for the target account's actual rule engine.
 
+Inputs:
+
+`AccountRuleProfile = FUNDEDNEXT_STELLAR_2STEP`
+
+`AccountInitialBalance = 100000` (research default; exact enrolled balance must be set before live deployment)
+
+`AccountCurrency = USD`
+
+`AccountRuleSafetyBufferR = 0.10R`
+
 The EA must implement AccountRuleEngine with:
-- DailyLossLimitAmount
-- MaximumLossLimitAmount
+- InitialBalance
+- DailyLossRate
+- DailyLossFloorAmount
+- MaximumLossRate
+- MaximumLossFloorAmount
 - current balance
 - current equity
 - realized P/L
 - floating P/L
 - commissions/fees
 - reset timestamp
-- safety buffer
+- safety-buffer amount
 - near-breach state
 - breach state
 
-For FundedNext, the selected account model must be configured because current official documentation distinguishes account models and includes open-position results in daily-loss calculations. The implementation must reproduce the selected model exactly rather than assuming a universal 3R rule.
+### Default official FundedNext Stellar 2-Step profile
+
+Current official documentation states a 5% daily loss limit and 10% maximum loss limit for Stellar 2-Step, with the daily rule resetting at 00:00 broker/server time and including closed/running trade results plus commissions, swap and fees. Therefore the frozen research profile is:
+
+`DailyLossRate = 5%`
+
+`DailyLossFloor = -InitialBalance × 0.05`
+
+`MaximumLossRate = 10%`
+
+`MaximumLossFloorEquity = InitialBalance × 0.90`
+
+`DailyNetResult = ClosedTradeResult + CurrentFloatingResult + AccountAppliedCommission + AccountAppliedSwap + AccountAppliedFees`, with no component counted twice when already included by the broker/account record.
+
+Daily reset timestamp = first broker-server timestamp at or after `00:00:00` on the new broker day.
+
+Account breach occurs when either:
+
+`DailyNetResult < DailyLossFloor`
+
+or
+
+`Equity < MaximumLossFloorEquity`.
+
+The AccountRuleSafetyBuffer is:
+
+`AccountRuleSafetyBufferCurrency = AccountRuleSafetyBufferR × DayRiskUnitCurrency`.
+
+Near-breach is entered when the projected distance to either external-rule floor is less than or equal to this buffer; breach state is entered at the actual floor crossing.
+
+Other FundedNext profiles may be supported only as separately declared AccountRuleProfile values with their official rules frozen before the run. No universal FundedNext rule may be assumed.
 
 ### 0B.11 News/account-rule treatment
 
@@ -475,18 +518,31 @@ DayRiskUnitCurrency = StartOfBrokerDayEquity × RiskPerTradePercent.
 
 DailyLossFloor = StartOfBrokerDayEquity − (MaxDailyLossR × DayRiskUnitCurrency).
 
-For an already-open trade, calculate only the incremental loss from the current executable quote to its currently valid stop plus declared stress buffers. Do not subtract the full original risk a second time from current equity.
+`DeclaredRiskExecutionBufferPoints = max(EntrySlippagePoints, ExitSlippagePoints)` when a non-zero fixed-adverse slippage stress is active; otherwise = 0.
+
+For an already-open trade, calculate only the incremental loss from the current executable quote to its currently valid stop plus the loss represented by DeclaredRiskExecutionBufferPoints. Use the selected native executable quote side and symbol economics; do not subtract the full original risk a second time from current equity.
 
 For a proposed trade:
-ProjectedWorstCaseEquity = CurrentEquity − Σ IncrementalWorstCaseOpenLoss − NewTradeWorstCaseLoss.
 
-Admission requires ProjectedWorstCaseEquity >= DailyLossFloor, plus all aggregate-risk and external AccountRuleEngine gates.
+`NewTradeWorstCaseLoss = loss from the admission-time executable entry to the valid stop + declared execution/slippage buffer + known admission-time costs`.
 
-This supersedes the earlier shortcut based only on realized daily R.
+`ProjectedWorstCaseEquity = CurrentEquity − Σ IncrementalWorstCaseOpenLoss − NewTradeWorstCaseLoss`.
+
+Admission requires `ProjectedWorstCaseEquity >= DailyLossFloor`, plus MaxAggregateOpenWorstCaseRiskR, MaxDirectionalOpenWorstCaseRiskR and all external AccountRuleEngine gates.
+
+The internal strategy risk budget and the external account-rule budget are never merged into one number; both must independently pass.
 
 ### 0C.10 Stress-aware position sizing
 
-Position size is solved against the declared worst-case loss budget, including the native executable stop path and declared adverse execution buffers. It must not size solely from ideal entry-to-stop geometry and then add slippage afterward.
+Position size is solved against the declared worst-case loss budget, including:
+
+- native executable stop path;
+- `DeclaredRiskExecutionBufferPoints`;
+- configured adverse slippage;
+- known admission-time commission/fees;
+- symbol-specific economics from `OrderCalcProfit` or equivalent.
+
+Baseline buffer = 0 points and baseline slippage = 0. Stress runs use only the pre-registered values in Phase 1. No undocumented “pressure”, “safety” or execution buffer may be introduced in code.
 
 ### 0C.11 Exact signal-close to executable-tick rule
 
@@ -625,7 +681,7 @@ Establish the exact, reproducible market-data and broker/execution contract cons
 
 ## 1.1 TimeframeSet and live timeframe
 
-Input:
+Inputs:
 
 `TimeframeSet`
 
@@ -637,9 +693,19 @@ Allowed selectable values:
 
 `M1 / M5 / M15 / M30 / H1`
 
+Parsing is comma-separated, case-insensitive and whitespace-tolerant. Empty entries, unsupported values and duplicate values are invalid and must fail initialization; duplicates are not silently removed. Canonical storage/reporting order is the fixed enum order: M1, M5, M15, M30, H1.
+
 The research tester may process one or multiple selected timeframes from the same tick stream, but each timeframe runs in a completely isolated research state.
 
-Live trading must select exactly one fixed timeframe from the declared set. Separate simultaneous live execution by multiple timeframes is prohibited.
+Input:
+
+`LiveTimeframe`
+
+Default:
+
+`M5`
+
+LiveTimeframe must be exactly one member of TimeframeSet. Live trading executes only that one fixed timeframe; simultaneous multi-timeframe live execution is prohibited.
 
 Tick execution remains independent of the selected timeframe.
 
@@ -661,21 +727,29 @@ Input:
 
 `TradingSessionMode`
 
+All session times are interpreted in Broker Server Time and all window ends are **exclusive**.
+
 ### Mode 1 — Full Day Except Late Spread Window (default)
 
-New entries are allowed only while the symbol is actually tradeable according to the broker symbol-session schedule.
+The base strategy window is the union of all broker-declared trading sessions for the requested timestamp range.
 
-StrategyEntryWindow = ActualTradeSession ∩ ConfiguredStrategyWindow
+At each broker date, define `LateBlockStart = 21:30`. Define `NextTradableSessionStart` as the earliest broker-session start time strictly after 21:30 across the same date or the next calendar dates. The search continues until a valid session is found.
 
-The default late-spread block remains `21:30 → next tradable session`.
+The late-spread block is:
 
-Do not hard-code a universal market open/close; obtain the tradable schedule from MT5 symbol session data.
+`[21:30, NextTradableSessionStart)`.
+
+If another trading session begins later the same date, the block ends at that later session start. Otherwise it ends at the first trading-session start on a later broker date. Thus “next tradable session” has an exact schedule-derived meaning and never assumes a universal market close.
+
+`StrategyEntryWindow = ActualTradeSession ∩ [not in the late-spread block]`.
 
 ### Mode 2 — NY Window
 
-New entries allowed only:
+Configured strategy window:
 
-`16:30 → 21:30 Broker Server Time`
+`[16:30, 21:30)` Broker Server Time.
+
+`StrategyEntryWindow = ActualTradeSession ∩ [16:30,21:30)`.
 
 ### Mode 3 — Custom
 
@@ -683,7 +757,25 @@ Inputs:
 
 `TradeStartTime`
 
+Default: `00:00`
+
 `TradeEndTime`
+
+Default: `24:00`
+
+`24:00` is a valid end-of-day sentinel and is permitted only for TradeEndTime.
+
+Window construction:
+
+- if Start < End: same-day window `[Start,End)`;
+- if Start > End: wrap-midnight window `[Start,24:00) ∪ [00:00,End)`;
+- if Start = End, the custom window is invalid except `00:00 → 24:00`, which means the full broker day.
+
+For every mode:
+
+`StrategyEntryWindow = ActualTradeSession ∩ ConfiguredStrategyWindow`.
+
+ActualTradeSession is obtained from MT5 `SymbolInfoSessionTrade` for the symbol and broker weekday; no hard-coded exchange schedule is substituted. This same intersection rule applies to Modes 1, 2 and 3.
 
 Session filtering controls **new entries only**.
 
@@ -691,19 +783,32 @@ Existing positions are not closed merely because the session ends.
 
 ## 1.4 Tick/data-quality audit
 
+Required manifest inputs:
+
+`AuditRequestedStartDate`
+
+Default: `2026-01-01`
+
+`AuditRequestedEndDate`
+
+Default: `2026-06-30`
+
+These inputs are a manual declaration of the MT5 Strategy Tester date range because the EA must not assume it can read the tester's requested start/end settings directly. The Run Card must copy the same dates from the tester UI before each historical run. The EA records actual first/last processed tick timestamps and reports any mismatch between declared and observed coverage; it never infers the requested tester range from runtime data.
+
 The engine must verify and report:
 
-- requested date range
-- actual first/last available tick
+- declared requested date range
+- actual first/last available/processed tick
 - tick timestamp monotonicity
 - duplicate timestamps
 - missing intervals
 - impossible/non-positive spreads
 - negative or corrupted price values
-- M1 OHLC vs tick reconciliation
-- real-tick coverage
-- minutes where MT5 falls back to generated ticks
-- number and duration of fallback intervals
+- M1 OHLC vs raw-tick reconciliation
+- selected SignalTimeframe OHLC construction/reconciliation
+- auditable real-tick availability
+- minutes with no usable raw real-tick records
+- minutes whose raw tick data fails M1 OHLC reconciliation
 - symbol specification snapshot at test start
 - trading-session specification
 - tick size
@@ -714,14 +819,29 @@ The engine must verify and report:
 - contract size
 - tick value
 
-MT5 documentation states that real ticks are the preferred high-fidelity tester source when available, but affected intervals can fall back to generated ticks. The final report must expose actual coverage rather than claiming 100% real-tick history.
+MT5 documents that real-tick testing can fall back to generated ticks when a minute has no tick data or when tick data for a minute contradicts the minute bar and is discarded. The EA cannot treat an undocumented internal tester flag as proof of the exact runtime tick-generation path. Therefore the roadmap uses the auditable class **PotentialFallbackMinute**: a scheduled tradeable minute with either no usable raw real-tick record or an M1/tick reconciliation failure. Reports must never label this class as confirmed generated ticks unless the platform explicitly exposes such a flag.
+
+Operational definitions:
+
+`AuditEligibleMinute` = one broker-scheduled tradeable minute inside the declared requested range.
+
+`PotentialFallbackMinute` = AuditEligibleMinute with zero usable raw real-tick records OR failed M1 OHLC reconciliation.
+
+`PotentialFallbackMinuteShare = PotentialFallbackMinute / AuditEligibleMinute`.
+
+`CriticalDataGap` = a gap between consecutive usable raw ticks longer than `CriticalDataGapThresholdMinutes` while the symbol is continuously tradeable; scheduled session breaks, weekends and closed-market intervals are excluded.
 
 Pre-registered data gates:
 
-MaxFallbackMinuteShare = 1%
-MaxCriticalDataGapMinutes = 0
+`MaxFallbackMinuteShare = 1%`
 
-A run exceeding these gates is DATA-FAILED unless an exception was documented before interpreting results.
+`CriticalDataGapThresholdMinutes = 5`
+
+`MaxCriticalDataGapCount = 0`
+
+A run exceeding either gate is DATA-FAILED unless the exception was frozen before results are interpreted.
+
+The audit must distinguish **no-tick/sparse data**, **potential tester fallback**, **closed-market intervals** and **session breaks** rather than counting them as one generic missing-data category.
 
 ## 1.5 Symbol price units
 
@@ -782,30 +902,70 @@ The research engine supports:
 
 `Latency`
 
-Explicit Inputs:
+### Commission — frozen baseline preset
 
-`SlippageMode = NONE` (default baseline)
+Input:
+
+`CommissionMode = FUNDEDNEXT_OFFICIAL_METALS`
+
+Official published FundedNext metals formula currently used for the baseline:
+
+`CommissionCurrency = VolumeLots × ContractSize × OpeningPrice × 0.0016%`
+
+For the published XAU/USD example, ContractSize = 100 and the stated 1-lot commission at an opening price of 4466.22 is $7.14. The roadmap applies the published formula once to the opening transaction and never manually doubles it. Any additional commission component is applied only when explicitly present in the dated broker/account schedule or in actual tester/account deal records.
+
+Research Inputs:
+
+`CommissionRatePercent = 0.0016%`
+
+`CommissionContractSizeSource = SYMBOL_TRADE_CONTRACT_SIZE` unless the frozen broker schedule explicitly specifies another contract size.
+
+`CommissionPricingBasis = OPEN_PRICE`.
+
+The report stores the applied commission source and currency amount per deal/trade.
+
+Historical backtests must label whether they use the current official FundedNext schedule or a dated historical schedule. Current-condition costs must never be presented as historical broker costs without that label.
+
+### Slippage
+
+Allowed:
+
+`SlippageMode = NONE | FIXED_ADVERSE_POINTS`
+
+Default:
+
+`NONE`
+
+Defaults:
 
 `EntrySlippagePoints = 0`
 
 `ExitSlippagePoints = 0`
 
-`LatencyMode = ZERO` (default baseline)
+Adverse direction is deterministic:
 
-`FixedExecutionDelayMs` exists for controlled research stress tests.
+- Long entry: Ask + EntrySlippagePoints
+- Short entry: Bid - EntrySlippagePoints
+- Long exit: Bid - ExitSlippagePoints
+- Short exit: Ask + ExitSlippagePoints
 
-The baseline does not invent historical slippage values. Any non-zero slippage/latency assumption must be explicitly shown in the run configuration and report.
+Pre-registered stress values for controlled sensitivity are 1, 2 and 5 symbol points, tested as separate declared scenarios. These values are not optimized.
 
-Commission must be configurable by dated schedule or current-condition preset.
+### Latency
 
-For the FundedNext preset, the current official XAUUSD metals commission schedule is represented as a configurable formula rather than permanently hard-coded business logic.
+Allowed:
 
-Historical backtests must report whether they use:
+`LatencyMode = ZERO | FIXED_MS`
 
-- current-condition costs applied uniformly, or
-- a dated historical commission schedule.
+Default:
 
-The research report must never present current costs applied retrospectively as if they were historical broker costs.
+`ZERO`
+
+`FixedExecutionDelayMs = 0`
+
+Pre-registered stress values are 100, 250 and 500 ms as separate declared scenarios. Any non-zero latency/slippage assumption must appear in the Run Card and report.
+
+The baseline does not invent historical slippage or latency values.
 
 ### Entry spread / cost admission gate
 
@@ -898,15 +1058,24 @@ It does not force-close existing positions.
 
 ## Phase 1 Gate
 
-**Logic:** Phase 1 closes the data/execution contract before any strategy result can be trusted.
+**Logic:** Phase 1 is a specification-completeness gate as well as an implementation gate. No later strategy phase may begin while a Phase-1 behavior still requires developer interpretation.
 
 Before advancing, submit the DataManifest schema, symbol/session snapshot, data-quality audit and execution contract using the Rapid Iteration Sample only where a historical smoke check is needed. Keep every roadmap default unchanged; only the requested date range may be changed to the rapid sample for speed. No strategy input is tuned in this phase.
 
-Complete only when the requested historical range, real-tick/fallback coverage, broker server-time basis, symbol specification, Bid/Ask quote model, cost model, spread gate, sizing constraints and canonical daily-risk admission inputs are fully measurable and reproducible.
+Complete only when all of the following are frozen and reproducible:
+
+- TimeframeSet parsing/canonicalization and LiveTimeframe rule;
+- broker-session schedule intersection and exact Mode 1/2/3 window semantics;
+- requested-date manifest inputs and actual tick coverage audit;
+- PotentialFallbackMinute and CriticalDataGap operational definitions/gates;
+- symbol specification and Bid/Ask quote model;
+- commission, slippage and latency inputs and stress semantics;
+- AccountRuleProfile and external daily/max-loss formulas;
+- internal daily-risk formula, aggregate/directional ceilings and explicit execution-buffer semantics.
 
 ### Required output
 
-Data-quality report, symbol/session snapshot, cost/execution contract, DataManifest schema, exact Inputs/Run Card, and blocking-test status. No strategy-selection decision is made here.
+Data-quality report, symbol/session snapshot, cost/execution contract, AccountRule profile snapshot, DataManifest schema, exact Inputs/Run Card, and blocking-test status. No strategy-selection decision is made here.
 # Phase 2 — Liquidity Model, Exact Sweep Events & Python Reference Foundation
 
 ## Goal
@@ -2564,6 +2733,12 @@ Use exactly this compact structure inside the roadmap:
 
 # Roadmap Update Log
 
+## Update 2026-09-28 — Phase 1 specification-completeness closure
+
+- Closed Phase 1 gaps for broker-session windows, raw-tick/fallback auditing, cost/slippage/latency models, FundedNext account rules, execution buffers and live timeframe selection.
+- Phase 1 Gate now blocks progression until these behaviors are frozen and the exact Inputs/Run Card are supplied.
+
+
 ## Update 2026-09-28 — Timeframe-specific early-stop gate
 
 - Applied the Early-stop / redesign rule independently per selected timeframe; only timeframes meeting STOP_EARLY_REDESIGN are removed, while INCONCLUSIVE timeframes remain active. The whole project stops only if all selected timeframes are removed.
@@ -2605,7 +2780,8 @@ The project is complete only when:
 - research timeframes run in one tick pass with isolated state; live uses one fixed timeframe
 - Broker Server Time is authoritative
 - all three trading-session modes work
-- real ticks are used whenever available and any fallback is reported
+- real-tick availability is audited from raw tick records and M1 reconciliation; PotentialFallbackMinute is reported without falsely claiming an undocumented tester tick-source flag
+- CriticalDataGapThresholdMinutes=5 and MaxCriticalDataGapCount=0 are enforced
 - actual Bid/Ask and same-tick spread are used
 - XAUUSD strategy pip size is explicit
 - entry/SL/TP/BE are deterministic
