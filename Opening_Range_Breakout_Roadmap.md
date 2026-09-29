@@ -93,6 +93,7 @@ LSR-specific files are kept for history and are **not used** by ORB: `LSR_Liquid
    - ORB-1 must first read the **official FundedNext commission schedule for indices** and record the source URL and date in this roadmap. If the schedule states no commission, the formula returns 0 and the Run Card says so. If it states a formula, implement exactly that formula.
    - Also cross-check the result against the `DEAL_COMMISSION` of one demo/tester deal on NDX100.
    - Existing XAUUSD tests must still pass unchanged.
+   - **Recorded 2026-09-29 (ORB-1):** FundedNext Help Center, "What are the commission charges for Stellar Challenges and FundedNext Accounts?" (`https://help.fundednext.com/en/articles/10701368`), and *Symbols & Conditions* (`https://fundednext.com/general-rules/cfds/symbols-and-conditions`). Stellar 1-Step/2-Step list commission for Forex, Oil, Metals (0.0016%), Crypto and Stocks; **indices carry no commission**. `FUNDEDNEXT_OFFICIAL_INDICES` therefore returns 0, and a non-zero `CommissionRatePercent` fails initialization. The pages were read through search excerpts because the build container could not open fundednext.com directly; the `DEAL_COMMISSION` cross-check on the owner's machine is the binding confirmation (Run Card 2).
 2. **`MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5`**: stays the **single** blocking-test script for the repository (owner decision). Add ORB suites (`TestOrbDays`, `TestOrbProxy`, `TestIndexCommission`) and include `../../Include/OpeningRangeBreakout/ORB_Phase1.mqh`. Keep the existing suites.
 3. **`docs/DataManifest.schema.json`**: add an optional `orb` summary object.
 
@@ -220,6 +221,21 @@ The engine consumes the single-pass M1 stream from `CLSR_M1Builder`. It advances
    - gross/net P/L and R, costs R, MAE/MFE R;
    - F2 flag, quarantine flag.
 
+## 4A. ORB-1 implementation closures (binding)
+
+Implementing ORB-1 exposed the gaps below. Each is closed here; where these rules conflict with earlier wording in Sections 3–4, they win.
+
+1. **When the day ledger is built.** The tick pass stores only raw per-day aggregates. The ledger is built once at the end of the run, because the data quarantine and the detected closures are known only after the raw audit is finalized. Every feature of day d still uses only broker days before d, so there is no look-ahead.
+2. **Rows.** One row per OR length for every broker day from the day of the first processed M1 bar to the day of the last one on which 16:30 lies inside the weekly scheduled session (`SymbolInfoSessionTrade`). A scheduled day without bars gets a row (`NO_TRADE_INCOMPLETE_RANGE`).
+3. **Decision order.** The first blocking reason wins: `NO_TRADE_INCOMPLETE_RANGE` → `NO_TRADE_QUARANTINE` → `NO_TRADE_WARMUP` → `NO_TRADE_DOJI` → `NO_TRADE_NO_TICK` → `TRADE`. `WARMUP` applies to every trial (it is a decision code, not only the F1 flag).
+4. **5a — `NO_TRADE_INVALID_STOP` lives on the proxy rows.** It needs the entry tick's Bid/Ask, which the BID M1 bars do not contain, so it cannot be reproduced byte for byte by the Python day reference. The day row stays `TRADE`; both proxy rows read `state = NO_TRADE`, `reason = NO_TRADE_INVALID_STOP` and are outside every analysis set.
+5. **`NO_TRADE_NO_TICK`** is bar-derived: no M1 bar in `[OR end, 23:00)`. With `LatencyMode = ZERO` this equals "no executable tick". With a latency delay the proxy may find no executable tick although a bar exists; that proxy row reads `NOT_ENTERED / NO_EXECUTABLE_TICK`.
+6. **Exact comparisons.** Direction, NR7 and F5 compare integer symbol points. F1 compares `ORTicks × 14 ≥ sum of the previous 14 ORTicks`. SMA50 = sum of 50 close points / 50 × point. RV, SMA50, ATR14_D and width/ATR are printed with 6 decimals, prices with symbol digits. An OR's OHLC is printed when at least one bar exists; width, direction and width/ATR only when the OR is complete.
+7. **Quarantine flags.** A day is `NO_TRADE_QUARANTINE` when `[OR start, OR end)` overlaps a quarantine window, a detected closure or a declared closure. A proxy's `in_quarantine` covers `[OR start, exit + 1 s)`; Section 5.1 excludes such proxies.
+8. **End of day.** A proxy exits on the first tick at or after 23:00 (`TIME_EXIT`, or `GAP_TIME_EXIT` after a gap > 300 s). If its broker day ends without such a tick, it closes on that day's last tick when the next day's first tick arrives: `TIME_EXIT_EARLY_CLOSE` when 23:00 lies inside the scheduled session, otherwise `TIME_EXIT`. At the end of the run the same rule applies when the proxy's day lies fully inside the declared range; otherwise `END_OF_DATA`. Proxies therefore never cross a broker-day rollover, and swap is structurally 0.
+9. **F2** compares the entry tick's spread with `0.10 × |Entry − SL|` after tick alignment; it is identical for both exits.
+10. **Output folder.** `CLSR_RunOutput` hard-codes `Common\Files\LSR\`, so `ORB_Phase1.mqh` carries `CORB_RunOutput` with the same contract and the `ORB` root (Section 10). The manifest keeps the LSR schema (`lsr.datamanifest.v1`) with the optional `orb` object.
+
 ## 5. Statistics and decision rules (ORB-2)
 
 1. **Analysis set per trial.** Closed proxies (not `END_OF_DATA`), not quarantined, that pass the trial's filter set.
@@ -257,6 +273,26 @@ The engine consumes the single-pass M1 stream from `CLSR_M1Builder`. It advances
 - Smoke run: NDX100, 2026-01-01 → 2026-07-01 (tester end date exclusive), one pass. This triggers the NDX100 tick download. Required: data gate PASSED, `orb_days` reconciliation byte-identical, all proxies closed or explained.
 - **Gate:** tests PASS, compile 0/0, reconciliation PASS. Record counts only.
 
+#### ORB-1 completion record
+
+```
+ORB-1 — CODE COMPLETE (gate pending the owner's compile, tests and smoke run)
+Date: 2026-09-29
+Files changed: added MQL5/Include/OpeningRangeBreakout/{ORB_Types,ORB_Days,ORB_Proxy,ORB_Phase1}.mqh,
+  MQL5/Experts/OpeningRangeBreakout/ORB_Expert.mq5, MQL5/Scripts/OpeningRangeBreakout/ORB_DayReplay.mq5,
+  python/orb_reference/{__init__,days,proxy,study,run_reference}.py, python/tests/{test_orb_days,test_orb_study}.py,
+  docs/ORB_RunCard.md; modified MQL5/Include/LiquiditySweepReversal/{LSR_Types,LSR_Costs}.mqh (index commission, 1.3),
+  MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5 (ORB suites), docs/DataManifest.schema.json (optional orb object,
+  ORB roadmap filename), this roadmap (1.3 source, 4A, this record, update log).
+Summary: Day ledger (OR5/OR15, RV/F1, NR7, SMA50/F5, ATR14_D, decision codes) built from the single M1 BID stream;
+  tick-level R10_EOD/R2_EOD proxies with the end-of-day exit; non-trading research EA writing the ORB run package;
+  M1 replay script; independent Python day reference with byte-identical reconciliation and proxy completeness check;
+  trial statistics (16 trials, day-block bootstrap, Holm), ORB-1S screen and ORB-2 decision.
+Compile/Tests: Python unittest 37/37 OK (build container, Python 3.11; standard library only). The MQL5 files could not
+  be compiled in the build container (no MetaEditor): compile 0/0 and LSR_Tests PASS are the owner's first gate step.
+Result: pending — smoke run NDX100 2026.01.01–2026.07.01, data gate, reconciliation and counts go here.
+```
+
 ### ORB-1S — Screening on 2026 H1 (owner-approved, pre-registered 2026-09-29)
 
 This runs before any older data is downloaded. It uses the ORB-1 smoke run and applies **only** this rule:
@@ -269,6 +305,20 @@ This runs before any older data is downloaded. It uses the ORB-1 smoke run and a
 3. **The other 15 trials, including the co-reported `OR5 / BASE / R10_EOD`, are information only.** They cannot turn `SCREEN_STOP` into `SCREEN_CONTINUE`.
 4. **No profitability claim is possible here**; the sample is below the inferential minimum. No input, filter, time or exit may change because of these results. A change reopens pre-registration and needs the owner's logged approval.
 5. 2026 H1 is never included in ORB-2 statistics.
+
+Implementation: `python -m orb_reference.study <package> --mode screen` (Run Card 6). `--mode dev` refuses rows dated in 2026 H1 or 2025.
+
+#### ORB-1S completion record
+
+```
+ORB-1S — CODE COMPLETE (classification pending the ORB-1 smoke run)
+Date: 2026-09-29
+Files changed: python/orb_reference/study.py, python/tests/test_orb_study.py, docs/ORB_RunCard.md (Section 6).
+Summary: Screen of the primary trial OR5/UNFILTERED/R10_EOD on the ORB-1 package (Section 5.1 analysis set,
+  day-block bootstrap 10,000 reps, seed 20260929): SCREEN_STOP / SCREEN_INCONCLUSIVE_LOW_N / SCREEN_CONTINUE.
+  The other 15 trials are reported with Holm-adjusted p-values as information only.
+Result: pending.
+```
 
 ### ORB-2 — Development inference
 
@@ -348,6 +398,13 @@ Result: ...
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-29 — ORB-1 and ORB-1S implemented (code)
+
+- Index commission recorded (1.3): FundedNext states no commission for indices, so `FUNDEDNEXT_OFFICIAL_INDICES` returns 0. The `DEAL_COMMISSION` cross-check is left to the owner's run.
+- Added the binding implementation closures in 4A. Two of them need the owner's attention because they interpret the text: `NO_TRADE_INVALID_STOP` is recorded on the proxy rows instead of the day ledger (4A item 4), and `NO_TRADE_WARMUP` applies to every trial, including `UNFILTERED` (4A item 3).
+- `docs/DataManifest.schema.json`: optional `orb` object, and `code.roadmap_file` may now name this roadmap.
+- No research decision in Section 2 changed. The MQL5 code was not compiled in the build container; compile, tests, smoke run and the ORB-1S classification are the owner's next steps (Run Card).
 
 ## Update 2026-09-29 — Instrument changed to NDX100 (owner decision)
 

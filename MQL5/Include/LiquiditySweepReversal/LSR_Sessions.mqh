@@ -165,6 +165,14 @@ public:
       return true;
      }
 
+   //--- A broker 00:00-00:00 entry that is followed by another session on the same
+   //--- day is an empty placeholder (NDX100 Tue-Thu: 00:00-00:00, then 01:15-24:00),
+   //--- not a 24-hour session. A lone 00:00-00:00 stays ambiguous and is rejected.
+   static bool       IsEmptyPlaceholder(const int from, const int to, const bool hasFollowingSession)
+     {
+      return from == 0 && to == 0 && hasFollowingSession;
+     }
+
    bool              LoadFromSymbol(const string symbol, string &error)
      {
       Clear();
@@ -176,6 +184,10 @@ public:
             datetime from = 0, to = 0;
             if(!SymbolInfoSessionTrade(symbol, (ENUM_DAY_OF_WEEK)d, idx, from, to))
                break;
+            datetime nextFrom = 0, nextTo = 0;
+            bool hasNext = SymbolInfoSessionTrade(symbol, (ENUM_DAY_OF_WEEK)d, idx + 1, nextFrom, nextTo);
+            if(IsEmptyPlaceholder((int)from, (int)to, hasNext))
+               continue;
             if(!AddBrokerInterval(d, (int)from, (int)to, error))
                return false;
            }

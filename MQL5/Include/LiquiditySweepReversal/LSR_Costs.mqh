@@ -65,11 +65,21 @@ bool LSR_IsPreRegisteredLatency(const int ms)
 bool LSR_ValidateCostModel(const LSR_CostModel &m, string &error)
   {
    error = "";
-   if(!(m.commission_rate_percent > 0.0))
+   if(m.commission_mode == LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES)
      {
-      error = "CommissionRatePercent must be positive";
-      return false;
+      //--- the official schedule states no commission for indices (ORB roadmap 1.3)
+      if(m.commission_rate_percent != 0.0)
+        {
+         error = "CommissionRatePercent must be 0 for FUNDEDNEXT_OFFICIAL_INDICES (no index commission is charged)";
+         return false;
+        }
      }
+   else
+      if(!(m.commission_rate_percent > 0.0))
+        {
+         error = "CommissionRatePercent must be positive";
+         return false;
+        }
    if(m.contract_size_source == LSR_CONTRACT_SIZE_BROKER_SCHEDULE && !(m.schedule_contract_size > 0.0))
      {
       error = "CommissionScheduleContractSize must be positive when CommissionContractSizeSource = BROKER_SCHEDULE";
@@ -132,6 +142,8 @@ bool LSR_ValidateCostModel(const LSR_CostModel &m, string &error)
 //| Commission (FUNDEDNEXT_OFFICIAL_METALS):                         |
 //| VolumeLots × ContractSize × OpeningPrice × Rate%, charged once on|
 //| the opening transaction. Stored unrounded.                       |
+//| FUNDEDNEXT_OFFICIAL_INDICES: the schedule states no commission,  |
+//| so the formula returns 0 (ORB roadmap 1.3).                      |
 //+------------------------------------------------------------------+
 double LSR_CommissionContractSize(const LSR_CostModel &m, const LSR_SymbolSpec &s)
   {
@@ -141,6 +153,8 @@ double LSR_CommissionContractSize(const LSR_CostModel &m, const LSR_SymbolSpec &
 double LSR_CommissionCurrency(const LSR_CostModel &m, const double volumeLots,
                               const double contractSize, const double openingPrice)
   {
+   if(m.commission_mode == LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES)
+      return 0.0;
    return volumeLots * contractSize * openingPrice * (m.commission_rate_percent / 100.0);
   }
 
@@ -255,7 +269,9 @@ void LSR_WriteCostModelJson(CLSR_Json &j, const LSR_CostModel &m, const double r
    j.KNum("strategy_pip_size", strategyPipSize, 8);
    j.KObj("commission");
    j.KStr("mode", LSR_CommissionModeName(m.commission_mode));
-   j.KStr("formula", "VolumeLots * ContractSize * OpeningPrice * CommissionRatePercent / 100, once on the opening transaction");
+   j.KStr("formula", m.commission_mode == LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES ?
+          "0 (official FundedNext schedule states no commission for indices)" :
+          "VolumeLots * ContractSize * OpeningPrice * CommissionRatePercent / 100, once on the opening transaction");
    j.KNum("rate_percent", m.commission_rate_percent, 8);
    j.KStr("contract_size_source", LSR_ContractSizeSourceName(m.contract_size_source));
    j.KNum("contract_size", resolvedContractSize, 8);

@@ -10,6 +10,7 @@
 #property script_show_inputs
 
 #include "../../Include/LiquiditySweepReversal/LSR_Phase3.mqh"
+#include "../../Include/OpeningRangeBreakout/ORB_Phase1.mqh"
 
 input bool InpCloseTerminalWhenDone = false; // Close terminal after the run (CI use)
 
@@ -179,6 +180,9 @@ void TestSessions(void)
    Check(gold.NextSessionStartAfter(D'2026.01.09 21:30', ns) && ns == D'2026.01.12 01:00', "next start after Fri 21:30 is Mon 01:00");
    Check(gold.NextSessionStartAfter(D'2026.01.06 01:00', ns) && ns == D'2026.01.07 01:00', "strictly after: equal start excluded");
    Check(!gold.AddBrokerInterval(2, 3600, 3600, e), "zero-length broker interval rejected");
+   Check(CLSR_SessionSchedule::IsEmptyPlaceholder(0, 0, true), "00:00-00:00 followed by a session is an empty placeholder");
+   Check(!CLSR_SessionSchedule::IsEmptyPlaceholder(0, 0, false), "lone 00:00-00:00 stays ambiguous");
+   Check(!CLSR_SessionSchedule::IsEmptyPlaceholder(3600, 3600, true), "non-midnight zero-length is never a placeholder");
 
    //--- Mode 1
    CLSR_StrategyWindow w1;
@@ -1267,11 +1271,373 @@ void TestPhase3EventStudy(void)
   }
 
 //+------------------------------------------------------------------+
+//| ORB-1 fixtures (Opening_Range_Breakout_Roadmap ORB-1). The same  |
+//| fixtures and expected values are in python/tests/test_orb_days.py|
+//+------------------------------------------------------------------+
+void OrbWeekdays(const CLSR_SessionSchedule &s, const int n, datetime &out[])
+  {
+   ArrayResize(out, 0);
+   datetime d = D'2026.01.05';
+   while(ArraySize(out) < n)
+     {
+      if(s.IsInSession(d + ORB_SESSION_START_SEC))
+        {
+         int k = ArraySize(out);
+         ArrayResize(out, k + 1);
+         out[k] = d;
+        }
+      d += LSR_SECONDS_PER_DAY;
+     }
+  }
+
+void OrbBar(CORB_DayLedger &led, const datetime day, const int hh, const int mm,
+            const double o, const double h, const double l, const double c, const long ticks)
+  {
+   LSR_Bar b;
+   b.time = day + hh * 3600 + mm * 60;
+   b.period = 60;
+   b.open = o;
+   b.high = h;
+   b.low = l;
+   b.close = c;
+   b.ticks = ticks;
+   led.OnM1(b);
+  }
+
+//--- 15 opening-range bars plus a 16:45 bar; `skipMinute` (30..44) is left out.
+void Or15Day(CORB_DayLedger &led, const datetime day, const int skipMinute)
+  {
+   double f5[5][5] = {{100.00, 101.00, 99.50, 100.50, 10}, {100.50, 102.00, 100.00, 101.50, 11}, {101.50, 101.80, 98.00, 99.00, 12},
+                      {99.00, 100.20, 98.50, 100.00, 13}, {100.00, 100.90, 99.80, 100.80, 14}};
+   for(int j = 0; j < 15; j++)
+     {
+      if(30 + j == skipMinute)
+         continue;
+      if(j < 5)
+         OrbBar(led, day, 16, 30 + j, f5[j][0], f5[j][1], f5[j][2], f5[j][3], (long)f5[j][4]);
+      else
+         OrbBar(led, day, 16, 30 + j, 100.80, j == 10 ? 103.00 : 100.90, 100.70, 100.80, 5);
+     }
+   OrbBar(led, day, 16, 45, 100.80, 100.90, 100.70, 100.80, 5);
+  }
+
+//--- Five rising OR5 bars (or a doji) with per-bar ticks, plus an optional 16:35 bar.
+void Or5Day(CORB_DayLedger &led, const datetime day, const long &ticks[], const bool doji, const bool after)
+  {
+   for(int j = 0; j < 5; j++)
+     {
+      double o = 100.00 + 0.10 * j, c = o + 0.10;
+      if(doji)
+        {
+         o = (j == 0 ? 100.00 : 100.20);
+         c = (j == 4 ? 100.00 : 100.20);
+        }
+      OrbBar(led, day, 16, 30 + j, o, MathMax(o, c) + 0.05, MathMin(o, c) - 0.05, c, ticks[j]);
+     }
+   if(after)
+      OrbBar(led, day, 16, 35, 100.50, 100.60, 100.40, 100.50, 3);
+  }
+
+//--- One column of a built ledger row, by header name ("" when absent).
+string OrbCol(const CORB_DayLedger &led, const string date, const int k, const string col)
+  {
+   string hdr[];
+   int nh = StringSplit(CORB_DayLedger::Header(), ',', hdr);
+   int ci = -1;
+   for(int i = 0; i < nh; i++)
+      if(hdr[i] == col)
+         ci = i;
+   for(int i = 0; i < led.RowCount(); i++)
+     {
+      ORB_DayRow r;
+      led.Row(i, r);
+      if(r.orlen != k || LSR_IsoDate(r.day) != date)
+         continue;
+      string f[];
+      StringSplit(led.RowText(r), ',', f);
+      return ci >= 0 ? f[ci] : "";
+     }
+   return "";
+  }
+
+void TestOrbDays(void)
+  {
+   Suite("ORB-1 Day ledger");
+   CLSR_SessionSchedule s;
+   BuildGoldSchedule(s);
+   CORB_IntervalList none;
+   datetime d[];
+   //--- OR5 / OR15 build, missing bar -> incomplete
+     {
+      CORB_DayLedger led;
+      led.Init(2, 0.01);
+      OrbWeekdays(s, 3, d);
+      Or15Day(led, d[0], 0);
+      Or15Day(led, d[1], 32);
+      Or15Day(led, d[2], 40);
+      led.Build(s, none);
+      string a = "2026-01-05";
+      Check(OrbCol(led, a, 0, "or_bars") == "5" && OrbCol(led, a, 0, "or_open") == "100.00" && OrbCol(led, a, 0, "or_high") == "102.00" &&
+            OrbCol(led, a, 0, "or_low") == "98.00" && OrbCol(led, a, 0, "or_close") == "100.80" && OrbCol(led, a, 0, "or_ticks") == "60",
+            "OR5 open/high/low/close/ticks from the first five M1 bars");
+      Check(OrbCol(led, a, 0, "or_width") == "4.00" && OrbCol(led, a, 0, "direction") == "LONG", "OR5 width and direction");
+      CheckStr(OrbCol(led, a, 0, "decision"), "NO_TRADE_WARMUP", "first session is warm-up");
+      Check(OrbCol(led, a, 0, "rv") == "NA" && OrbCol(led, a, 0, "prior_valid_sessions") == "0", "RV undefined without prior sessions");
+      Check(OrbCol(led, a, 1, "or_bars") == "15" && OrbCol(led, a, 1, "or_high") == "103.00" && OrbCol(led, a, 1, "or_ticks") == "110" &&
+            OrbCol(led, a, 1, "or_end") == "2026-01-05T16:45:00", "OR15 built from fifteen M1 bars");
+      Check(OrbCol(led, "2026-01-06", 0, "or_bars") == "4" && OrbCol(led, "2026-01-06", 0, "direction") == "NA" &&
+            OrbCol(led, "2026-01-06", 0, "or_width") == "NA", "missing 16:32 bar: OR5 has 4 bars, no direction");
+      CheckStr(OrbCol(led, "2026-01-06", 0, "decision"), "NO_TRADE_INCOMPLETE_RANGE", "missing bar -> OR5 incomplete");
+      CheckStr(OrbCol(led, "2026-01-06", 1, "decision"), "NO_TRADE_INCOMPLETE_RANGE", "missing bar -> OR15 incomplete");
+      CheckStr(OrbCol(led, "2026-01-07", 0, "decision"), "NO_TRADE_WARMUP", "missing 16:40 bar leaves OR5 complete");
+      Check(OrbCol(led, "2026-01-07", 1, "or_bars") == "14" && OrbCol(led, "2026-01-07", 1, "decision") == "NO_TRADE_INCOMPLETE_RANGE",
+            "missing 16:40 bar -> OR15 incomplete");
+      CheckStr(OrbCol(led, "2026-01-07", 0, "prior_valid_sessions"), "1", "an incomplete day is not a valid session");
+     }
+   //--- RV warm-up and value, NO_TICK, doji
+     {
+      CORB_DayLedger led;
+      led.Init(2, 0.01);
+      OrbWeekdays(s, 17, d);
+      long t10[] = {10, 10, 10, 10, 10};
+      long t14[] = {14, 14, 14, 14, 14};
+      long t49[] = {10, 10, 10, 10, 9};
+      for(int i = 0; i < 17; i++)
+        {
+         if(i == 14)
+            Or5Day(led, d[i], t14, false, true);
+         else
+            if(i == 15)
+               Or5Day(led, d[i], t49, false, false);
+            else
+               Or5Day(led, d[i], t10, i == 16, true);
+        }
+      led.Build(s, none);
+      Check(OrbCol(led, "2026-01-22", 0, "decision") == "NO_TRADE_WARMUP" && OrbCol(led, "2026-01-22", 0, "prior_valid_sessions") == "13" &&
+            OrbCol(led, "2026-01-22", 0, "rv") == "NA" && OrbCol(led, "2026-01-22", 0, "f1") == "NA", "13 prior valid sessions -> warm-up");
+      Check(OrbCol(led, "2026-01-23", 0, "decision") == "TRADE" && OrbCol(led, "2026-01-23", 0, "prior_valid_sessions") == "14",
+            "14 prior valid sessions -> TRADE");
+      Check(OrbCol(led, "2026-01-23", 0, "rv") == "1.400000" && OrbCol(led, "2026-01-23", 0, "f1") == "1", "RV = 70 / mean(50) = 1.4, F1 pass");
+      Check(OrbCol(led, "2026-01-26", 0, "decision") == "NO_TRADE_NO_TICK", "no bar after OR end -> NO_TRADE_NO_TICK");
+      Check(OrbCol(led, "2026-01-26", 0, "rv") == "0.952778" && OrbCol(led, "2026-01-26", 0, "f1") == "0", "RV = 49 / mean(720/14), F1 fail");
+      Check(OrbCol(led, "2026-01-27", 0, "decision") == "NO_TRADE_DOJI" && OrbCol(led, "2026-01-27", 0, "direction") == "NONE" &&
+            OrbCol(led, "2026-01-27", 0, "prior_valid_sessions") == "16", "OR close = open -> doji");
+      CheckStr(OrbCol(led, "2026-01-10", 0, "decision"), "", "Saturday: no row (16:30 not scheduled)");
+     }
+   //--- NR7 with ties
+     {
+      CORB_DayLedger led;
+      led.Init(2, 0.01);
+      OrbWeekdays(s, 10, d);
+      double rg[] = {5, 10, 8, 9, 12, 7, 11, 7, 20, 6};
+      for(int i = 0; i < 10; i++)
+         OrbBar(led, d[i], 10, 0, 100.00, 100.00 + rg[i], 100.00, 100.00, 1);
+      led.Build(s, none);
+      CheckStr(OrbCol(led, "2026-01-14", 0, "nr7"), "NA", "NR7 needs seven prior complete days");
+      Check(OrbCol(led, "2026-01-15", 0, "nr7") == "1" && OrbCol(led, "2026-01-15", 0, "prev_date") == "2026-01-14" &&
+            OrbCol(led, "2026-01-15", 0, "prev_range") == "7.00", "NR7 true with a tie");
+      CheckStr(OrbCol(led, "2026-01-16", 0, "nr7"), "0", "NR7 false for a wide previous day");
+      CheckStr(OrbCol(led, "2026-01-05", 0, "prev_date"), "NA", "first processed day is never a previous day");
+     }
+   //--- SMA50 boundary
+   for(int v = 0; v < 2; v++)
+     {
+      CORB_DayLedger led;
+      led.Init(2, 0.01);
+      OrbWeekdays(s, 52, d);
+      long t10[] = {10, 10, 10, 10, 10};
+      for(int i = 0; i < 52; i++)
+        {
+         if(i == 51)
+           {
+            Or5Day(led, d[i], t10, false, true);
+            continue;
+           }
+         double c = (i == 0 ? 90.00 : (i == 50 ? (v == 0 ? 100.50 : 100.00) : 100.00));
+         OrbBar(led, d[i], 10, 0, c, c, c, c, 1);
+        }
+      led.Build(s, none);
+      if(v == 0)
+        {
+         CheckStr(OrbCol(led, "2026-03-16", 0, "sma50"), "NA", "SMA50 needs fifty prior complete days");
+         Check(OrbCol(led, "2026-03-17", 0, "sma50") == "100.010000" && OrbCol(led, "2026-03-17", 0, "prev_close") == "100.50" &&
+               OrbCol(led, "2026-03-17", 0, "direction") == "LONG" && OrbCol(led, "2026-03-17", 0, "f5") == "1", "prev close above SMA50 -> long F5 pass");
+        }
+      else
+         Check(OrbCol(led, "2026-03-17", 0, "sma50") == "100.000000" && OrbCol(led, "2026-03-17", 0, "f5") == "0", "prev close equal to SMA50 -> F5 fail");
+     }
+   //--- quarantine overlap
+   for(int v = 0; v < 2; v++)
+     {
+      CORB_DayLedger led;
+      led.Init(2, 0.01);
+      OrbWeekdays(s, 1, d);
+      Or15Day(led, d[0], 0);
+      CORB_IntervalList q;
+      int m = (v == 0 ? 34 : 40);
+      q.Add(d[0] + 16 * 3600 + m * 60, d[0] + 16 * 3600 + (m + 1) * 60);
+      led.Build(s, q);
+      if(v == 0)
+         Check(OrbCol(led, "2026-01-05", 0, "decision") == "NO_TRADE_QUARANTINE" && OrbCol(led, "2026-01-05", 0, "in_quarantine") == "1" &&
+               OrbCol(led, "2026-01-05", 1, "decision") == "NO_TRADE_QUARANTINE", "quarantine at 16:34 -> OR5 and OR15 quarantined");
+      else
+         Check(OrbCol(led, "2026-01-05", 0, "decision") == "NO_TRADE_WARMUP" && OrbCol(led, "2026-01-05", 0, "in_quarantine") == "0" &&
+               OrbCol(led, "2026-01-05", 1, "decision") == "NO_TRADE_QUARANTINE", "quarantine at 16:40 -> only OR15 quarantined");
+     }
+  }
+
+//+------------------------------------------------------------------+
+class COrbHarness
+  {
+public:
+   CLSR_SessionSchedule sched;
+   CLSR_M1Builder    m1;
+   CORB_DayLedger    days;
+   CORB_ProxySim     sim;
+   CLSR_LinearEconomics *econ;
+   ulong             seq;
+
+                     COrbHarness(void) { econ = new CLSR_LinearEconomics(1.0, 20.0); seq = 0; }
+                    ~COrbHarness(void) { delete econ; }
+
+   void              Init(void)
+     {
+      BuildGoldSchedule(sched);
+      m1.Init(LSR_PRICE_BID, 2);
+      days.Init(2, 0.01);
+      ORB_ProxyConfig pc;
+      pc.point = 0.01;
+      pc.tick_size = 0.01;
+      pc.contract_size = 1.0;
+      pc.digits = 2;
+      pc.range_end_exclusive = D'2026.01.10';
+      LSR_CostModel cm;
+      LSR_CostModelDefaults(cm);
+      cm.commission_mode = LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES;
+      cm.commission_rate_percent = 0.0;
+      sim.Init(GetPointer(days), econ, GetPointer(sched), pc, cm);
+     }
+
+   void              Tick(const datetime t, const int ms, const double bid)
+     {
+      LSR_Quote q;
+      q.seq = ++seq;
+      q.time = t;
+      q.time_msc = (long)t * 1000 + ms;
+      q.bid = bid;
+      q.ask = bid + 1.0;
+      q.last = 0.0;
+      q.volume = 0;
+      q.flags = 0;
+      LSR_Bar b;
+      if(m1.OnQuote(q, b))
+         days.OnM1(b);
+      sim.OnQuote(q);
+     }
+
+   void              OrTicks(const datetime day, const double &bids[])
+     {
+      for(int j = 0; j < 5; j++)
+         Tick(day + 16 * 3600 + (30 + j) * 60 + 5, 0, bids[j]);
+     }
+  };
+
+void TestOrbProxy(void)
+  {
+   Suite("ORB-1 Proxy trades");
+   COrbHarness h;
+   h.Init();
+   datetime mon = D'2026.01.05';
+   datetime tue = D'2026.01.06';
+   datetime wed = D'2026.01.07';
+   datetime thu = D'2026.01.08';
+   datetime fri = D'2026.01.09';
+   double a[] = {20000.00, 20002.00, 19990.00, 20004.00, 20003.00};
+   h.OrTicks(mon, a);                                   // A: long, R2 target then R10 time exit
+   h.Tick(mon + 16 * 3600 + 35 * 60, 500, 20003.00);
+   h.Tick(mon + 16 * 3600 + 37 * 60, 0, 20040.00);
+   h.Tick(mon + 22 * 3600 + 57 * 60, 0, 20060.00);
+   h.Tick(mon + 23 * 3600, 0, 20100.00);
+   double b[] = {20010.00, 20012.00, 20005.00, 20001.00, 20002.00};
+   h.OrTicks(tue, b);                                   // B: short, stop wins over the time exit
+   h.Tick(tue + 16 * 3600 + 35 * 60, 250, 20001.00);
+   h.Tick(tue + 22 * 3600 + 58 * 60, 0, 20005.00);
+   h.Tick(tue + 23 * 3600 + 30, 0, 20012.50);
+   double c[] = {20000.00, 20003.00, 19998.00, 20001.00, 20000.00};
+   h.OrTicks(wed, c);                                   // C: doji
+   h.Tick(wed + 16 * 3600 + 35 * 60 + 1, 0, 20000.00);
+   double e[] = {20000.00, 20001.00, 19996.00, 20002.00, 20003.00};
+   h.OrTicks(thu, e);                                   // D: early close on the last tick of the day
+   h.Tick(thu + 16 * 3600 + 35 * 60, 0, 20003.00);
+   h.Tick(thu + 19 * 3600 + 59 * 60, 0, 20010.00);
+   h.Tick(fri + 3600, 0, 20020.00);
+   double f[] = {19995.00, 20000.00, 19990.00, 19998.00, 19996.00};
+   h.OrTicks(fri, f);                                   // E: invalid stop
+   h.Tick(fri + 16 * 3600 + 35 * 60, 0, 19985.00);
+   h.sim.Finish();
+
+   Check(h.sim.TradeCount() == 8 && h.sim.Find(mon, ORB_OR15, ORB_EXIT_R10_EOD) < 0, "one trade per OR length per day; incomplete OR15 never trades");
+   int r10 = h.sim.Find(mon, ORB_OR5, ORB_EXIT_R10_EOD);
+   int r2 = h.sim.Find(mon, ORB_OR5, ORB_EXIT_R2_EOD);
+   Check(r10 >= 0 && r2 >= 0 && h.sim.TradeDir(r10) == 1 && h.sim.TradeEntryMsc(r10) == (long)(mon + 16 * 3600 + 35 * 60) * 1000 + 500,
+         "entry on the first tick at or after the OR end, in the OR candle direction");
+   CheckNear(h.sim.TradeEntry(r10), 20004.00, 1e-9, "long entry at Ask");
+   CheckNear(h.sim.TradeSL(r10), 19989.00, 1e-9, "SL = OR low - entry spread");
+   CheckNear(h.sim.TradeR(r10), 15.0, 1e-9, "PlannedRisk1R per lot");
+   CheckNear(h.sim.TradeTP(r10), 20154.00, 1e-9, "R10 net target");
+   CheckNear(h.sim.TradeTP(r2), 20034.00, 1e-9, "R2 net target");
+   Check(h.sim.TradeF2(r10), "F2 pass: spread 1.00 <= 0.10 x 15.00");
+   Check(h.sim.TradeState(r2) == "CLOSED" && h.sim.TradeReason(r2) == "TP", "R2_EOD closes at the target");
+   CheckNear(h.sim.TradeNetR(r2), 2.4, 1e-9, "R2 NetR");
+   Check(h.sim.TradeReason(r10) == "TIME_EXIT" && h.sim.TradeExitMsc(r10) == (long)(mon + 23 * 3600) * 1000, "R10_EOD time exit at 23:00");
+   CheckNear(h.sim.TradeNetR(r10), 6.4, 1e-9, "R10 NetR");
+   CheckNear(h.sim.TradeMae(r10), 1.0, 1e-9, "MAE includes the entry tick");
+   CheckNear(h.sim.TradeMfe(r10), 96.0, 1e-9, "MFE to the exit tick");
+   for(int x = 0; x < ORB_EXIT_COUNT; x++)
+     {
+      int i = h.sim.Find(tue, ORB_OR5, x);
+      Check(i >= 0 && h.sim.TradeDir(i) == -1 && h.sim.TradeReason(i) == "STOP", "stop wins over the time exit on one tick (" + ORB_ExitName(x) + ")");
+      CheckNear(h.sim.TradeSL(i), 20013.00, 1e-9, "short SL = OR high + entry spread");
+      CheckNear(h.sim.TradeNetR(i), -12.5 / 12.0, 1e-9, "stop loss beyond 1R is reported, not clipped");
+     }
+   CheckNear(h.sim.TradeTP(h.sim.Find(tue, ORB_OR5, ORB_EXIT_R2_EOD)), 19977.00, 1e-9, "short R2 target");
+   Check(h.sim.Find(wed, ORB_OR5, ORB_EXIT_R10_EOD) < 0, "doji -> no proxy");
+   int dd = h.sim.Find(thu, ORB_OR5, ORB_EXIT_R10_EOD);
+   CheckNear(h.sim.TradeR(dd), 9.0, 1e-9, "D PlannedRisk1R");
+   Check(!h.sim.TradeF2(dd), "F2 fail: spread 1.00 > 0.10 x 9.00");
+   Check(h.sim.TradeReason(dd) == "TIME_EXIT_EARLY_CLOSE" && h.sim.TradeExitMsc(dd) == (long)(thu + 19 * 3600 + 59 * 60) * 1000,
+         "day without a tick at/after 23:00 closes on its last tick");
+   CheckNear(h.sim.TradeNetR(dd), 6.0 / 9.0, 1e-9, "early-close NetR");
+   int ee = h.sim.Find(fri, ORB_OR5, ORB_EXIT_R10_EOD);
+   Check(ee >= 0 && h.sim.TradeState(ee) == "NO_TRADE" && h.sim.TradeReason(ee) == "NO_TRADE_INVALID_STOP", "stop on the wrong side -> NO_TRADE_INVALID_STOP");
+  }
+
+//+------------------------------------------------------------------+
+void TestIndexCommission(void)
+  {
+   Suite("ORB 1.3 Index commission");
+   LSR_CostModel m;
+   LSR_CostModelDefaults(m);
+   string e;
+   CheckNear(LSR_CommissionCurrency(m, 1.0, 100.0, 4466.22), 7.145952, 1e-9, "XAUUSD metals formula unchanged");
+   LSR_CostModel ix = m;
+   ix.commission_mode = LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES;
+   ix.commission_rate_percent = 0.0;
+   Check(LSR_ValidateCostModel(ix, e), "indices mode with rate 0 is valid");
+   CheckNear(LSR_CommissionCurrency(ix, 1.0, 1.0, 20000.0), 0.0, 0.0, "index commission is 0 (official schedule)");
+   ix.commission_rate_percent = 0.0016;
+   Check(!LSR_ValidateCostModel(ix, e), "indices mode with a non-zero rate is rejected");
+   CheckStr(LSR_CommissionModeName(LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_INDICES), "FUNDEDNEXT_OFFICIAL_INDICES", "mode name");
+   CheckStr(LSR_CommissionModeName(LSR_COMMISSION_FUNDEDNEXT_OFFICIAL_METALS), "FUNDEDNEXT_OFFICIAL_METALS", "metals mode name unchanged");
+  }
+
+//+------------------------------------------------------------------+
 void OnStart(void)
   {
    g_pass = 0;
    g_fail = 0;
-   g_report = "LSR Phase 1+2 blocking tests — contracts " + LSR_PHASE1_CONTRACT_ID + ", " + LSR_PHASE2_CONTRACT_ID + ", " + LSR_PHASE3_CONTRACT_ID + "\n";
+   g_report = "LSR Phase 1+2 blocking tests — contracts " + LSR_PHASE1_CONTRACT_ID + ", " + LSR_PHASE2_CONTRACT_ID + ", " + LSR_PHASE3_CONTRACT_ID +
+              ", " + ORB_CONTRACT_ID + "\n";
 
    TestJson();
    TestTimeframes();
@@ -1288,6 +1654,9 @@ void OnStart(void)
    TestPhase2Sweeps();
    TestPhase2Sources();
    TestPhase3EventStudy();
+   TestOrbDays();
+   TestOrbProxy();
+   TestIndexCommission();
 
    string summary = StringFormat("RESULT: %s  passed=%d failed=%d  build=%d",
                                  g_fail == 0 ? "PASS" : "FAIL", g_pass, g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD));
