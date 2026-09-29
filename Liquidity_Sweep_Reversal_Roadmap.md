@@ -1116,7 +1116,7 @@ Data-quality report, symbol/session snapshot, cost/execution contract, AccountRu
 
 `Summary: Adds a non-trading Phase 1 contract library and EA. They cover TimeframeSet/LiveTimeframe, broker-time sessions (Modes 1/2/3), price units, the Bid/Ask quote model, commission/slippage/latency, the spread/cost gate, stress-aware sizing, daily and aggregate/directional risk admission, and the FundedNext AccountRuleEngine. The EA also runs the raw-tick and OHLC data audit with PFM/critical-gap gates and writes the DataManifest run package.`
 
-`Compile/Tests: MetaEditor 5.0.0.6182: LSR_Expert, LSR_Phase1_Tests and LSR_RawTickAudit each compiled with 0 errors, 0 warnings. Blocking tests executed 2026-09-29 on MT5 build 6182: RESULT PASS, passed=206, failed=0. The rapid-sample smoke run (docs/Phase1_RunCard.md) has not been executed. Phase 1 becomes COMPLETE only after both pass.`
+`Compile/Tests: MetaEditor 5.0.0.6182: LSR_Expert, LSR_Phase1_Tests and LSR_RawTickAudit each compiled with 0 errors, 0 warnings. Blocking tests executed 2026-09-29 on MT5 build 6182: RESULT PASS, passed=206, failed=0; after the 1.12 item 16 update: RESULT PASS, passed=225, failed=0. The rapid-sample smoke run (docs/Phase1_RunCard.md) has not been executed. Phase 1 becomes COMPLETE only after both pass.`
 
 `Blocking limitations: an MT5 script and a tester run need a connected terminal. The Phase 1 Gate packet must come from the FundedNext XAUUSD real-tick run.`
 # Phase 2 — Liquidity Model, Exact Sweep Events & Python Reference Foundation
