@@ -137,7 +137,7 @@ Each session has 4 filter sets and 2 exits, which gives **16 trials** in total:
 
 | Range | Use |
 |---|---|
-| 2026-01-01 → 2026-06-30 | ORB-1 smoke test: correctness and reconciliation only. **No inference.** About 125 trading days, so fewer than the inferential minimum |
+| 2026-01-01 → 2026-06-30 | ORB-1 smoke test: correctness and reconciliation only. Also the ORB-1S screen (Section 6); **no profitability inference**. About 125 trading days, so fewer than the inferential minimum |
 | 2020-07-01 → 2024-12-31 | ORB-2 development inference: the primary decision |
 | 2026-07-01 → 2026-09-28 | Development extension (ORB-2, reported separately) |
 | 2025-01-01 → 2025-12-31 | Untouched historical holdout, ORB-4 only, used once |
@@ -238,7 +238,20 @@ Each phase is one work package, handled in one chat.
   - F2 pass/fail;
   - one trade per session.
 - Smoke run: 2026-01-01 → 2026-07-01, both sessions, one pass. Required: data gate PASSED, `orb_days` reconciliation byte-identical, all proxies closed or explained.
-- **Gate:** tests PASS, compile 0/0, reconciliation PASS. Record counts only; interpreting performance is not allowed.
+- **Gate:** tests PASS, compile 0/0, reconciliation PASS.
+
+### ORB-1S — Screening on the cached 6 months (owner-approved, pre-registered 2026-09-29)
+
+The owner wants to avoid downloading 2020–2024 unless ORB is at least not clearly negative. The screen runs on the ORB-1 smoke run (2026-01-01 → 2026-06-30, ticks already cached) and applies **only** this rule:
+
+1. **Evaluate only the primary trial, `NY / BASE / EOD`.** Use the Section 5 analysis set and the day-block bootstrap (10,000 repetitions, seed 20260929).
+2. **Classification:**
+   - `SCREEN_STOP`: n ≥ 30 and Upper95(mean NetR) < 0, i.e. clearly negative. ORB stops; ask the owner whether to redesign.
+   - `SCREEN_INCONCLUSIVE_LOW_N`: n < 30. Report it and ask the owner whether to download the development data anyway.
+   - `SCREEN_CONTINUE`: anything else. Proceed to ORB-2 (download 2020-07 → 2024-12).
+3. **The other 15 trials are reported for information only.** They cannot trigger `SCREEN_CONTINUE` for ORB if the primary trial is `SCREEN_STOP`.
+4. **The screen can never support a profitability claim.** Its sample is below the inferential minimum (LSR 0A.1). No input, filter value, session time or exit may be changed because of screening results. A change reopens the pre-registration and needs the owner's approval, logged here.
+5. The screening period (2026 H1) is kept separate from the ORB-2 inference period (2020-07 → 2024-12). ORB-2 statistics never include 2026 H1.
 
 ### ORB-2 — Development inference
 
@@ -316,3 +329,4 @@ Result: ...
 ## Update 2026-09-29 — ORB roadmap created
 
 - The owner closed LSR after Phase 3 and approved ORB with: both sessions (NY first, same pass), a 15-minute opening range, entry in the direction of the opening-range candle, `EOD` and `R2` exits reported side by side, and the filters F1/F2/F7 as base with F3 and F5 as separate trials.
+- Added ORB-1S: a pre-registered screen on the cached 2026 H1 data, run before downloading 2020–2024. The owner chose to keep the same repository because ORB reuses the LSR engine modules directly.
