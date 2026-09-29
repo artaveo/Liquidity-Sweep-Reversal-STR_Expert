@@ -31,7 +31,7 @@ If any test fails, stop. Phase 1 is not complete.
 | Symbol | `XAUUSD` (FundedNext MT5 server) |
 | Period (chart) | any. Signal timeframes come from `TimeframeSet`, not from the chart |
 | Modelling | **Every tick based on real ticks** |
-| Date | Custom period **2026.01.01 → 2026.06.30** | ← check the END date: the first smoke run used 2026.09.25 by mistake
+| Date | Custom period **2026.01.01 → 2026.07.01**. The MT5 tester excludes its end date, so 07.01 is needed to include 30 June |
 | Deposit / currency | 100000 USD (the first smoke run used 10000 by mistake). It must match `AccountCurrency`, otherwise init fails |
 | Optimization | Disabled |
 

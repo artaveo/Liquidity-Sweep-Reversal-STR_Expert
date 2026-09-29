@@ -2776,6 +2776,10 @@ Use exactly this compact structure inside the roadmap:
 
 # Roadmap Update Log
 
+## Update 2026-09-29 — Second rapid-sample smoke run
+
+- DATA-PASSED: fallback share 0.065%, quarantine share 0.069%, 6 auto-detected closures (all holiday or early-close sessions), 6 quarantined gaps. M5/M15/H1 OHLC reconciliation had 0 mismatches, the tick stream had 0 anomalies, and there were no non-default inputs. The MT5 tester treats its end date as exclusive, so 2026-06-30 was not processed. The Run Card now sets the tester end date to 2026.07.01.
+
 ## Update 2026-09-29 — Automatic closure detection and data quarantine
 
 - The first rapid-sample smoke run was DATA-FAILED: fallback share 1.93% and 12 critical gaps. Ten of the gaps and about 99% of the fallback minutes were holidays and early closes that `SymbolInfoSessionTrade` does not list (2026-01-01, 01-19, 02-16, 04-03, 05-25, 06-19). Two were real broker data holes: 2026-02-20 20:31, 8 minutes with no bars; and 2026-06-17 22:00, 20 minutes with bars but no ticks, where tester fallback ticks are possible. The same run also used a tester end date of 2026-09-25 and a 10000 deposit instead of the Run Card values.
