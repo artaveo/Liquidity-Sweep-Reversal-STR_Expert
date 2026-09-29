@@ -12,11 +12,11 @@
 #property version     "2.00"
 #property description "Phases 1–2 — contract, data audit and liquidity sweep events (no trading)"
 
-#include "../../Include/LiquiditySweepReversal/LSR_Phase2.mqh"
+#include "../../Include/LiquiditySweepReversal/LSR_Phase3.mqh"
 
 //--- Run identity (DataManifest, roadmap 0A.6)
 input group "Run identity (DataManifest)"
-input string                        InpExperimentId               = "LSR-P2-SMOKE";   // ExperimentId
+input string                        InpExperimentId               = "LSR-P3-EVENTSTUDY";   // ExperimentId
 input string                        InpCodeCommitSHA              = "";               // CodeCommitSHA (git rev-parse HEAD)
 input string                        InpRoadmapSHA256              = "";               // RoadmapSHA256 (sha256 of the roadmap file)
 
@@ -111,6 +111,12 @@ input ENUM_LSR_MULTI_POOL_POLICY    InpMultiPoolSweepPolicy       = LSR_MULTIPOO
 input ENUM_LSR_ENTRY_MODE           InpEntryMode                  = LSR_ENTRY_RECLAIM_CLOSE; // EntryMode (recorded as confirmation mode)
 input bool                          InpExportReferenceBars        = true;             // ExportReferenceBars (M1 CSV for the Python reference)
 
+//--- Phase 3 event study
+input group "3 Pre-implementation event study"
+input bool                          InpEventStudyEnabled          = true;             // EventStudyEnabled (hypotheses A and B)
+input double                        InpSweepSLExtraPips           = 3.0;              // SweepSLExtraPips
+input double                        InpSingleTP_R                 = 2.0;              // SingleTP_R (net target, FIXED_R)
+
 //+------------------------------------------------------------------+
 //| One isolated research state per selected timeframe (rule 11).    |
 //+------------------------------------------------------------------+
@@ -120,6 +126,7 @@ public:
    ENUM_LSR_TIMEFRAME tf;
    CLSR_BarReconciler bars;
    CLSR_EventEngine  events;
+   CLSR_EventStudy   study;
    CLSR_DailyRiskState daily;
    CLSR_AccountRuleEngine acct;
    double            equity;
@@ -186,6 +193,7 @@ CLSR_M1Builder         g_m1;
 int                    g_m1File = INVALID_HANDLE;
 long                   g_m1Count = 0;
 datetime               g_firstM1 = 0;
+CLSR_MT5Economics     *g_econ = NULL;
 
 LSR_TickAnomalies      g_stream;
 bool                   g_havePrev = false;
@@ -203,7 +211,7 @@ string                 g_initTime = "";
 //+------------------------------------------------------------------+
 void RecordInputs(void)
   {
-   g_inputs.Add("ExperimentId", InpExperimentId, "LSR-P2-SMOKE");
+   g_inputs.Add("ExperimentId", InpExperimentId, "LSR-P3-EVENTSTUDY");
    g_inputs.Add("CodeCommitSHA", InpCodeCommitSHA, "");
    g_inputs.Add("RoadmapSHA256", InpRoadmapSHA256, "");
    g_inputs.Add("TimeframeSet", InpTimeframeSet, LSR_DEFAULT_TIMEFRAME_SET);
@@ -267,6 +275,10 @@ void RecordInputs(void)
    g_inputs.Add("MultiPoolSweepPolicy", LSR_MultiPoolPolicyName(InpMultiPoolSweepPolicy), "FIRST_CROSSED_LEVEL");
    g_inputs.Add("EntryMode", LSR_EntryModeName(InpEntryMode), "RECLAIM_CLOSE");
    g_inputs.AddBool("ExportReferenceBars", InpExportReferenceBars, true);
+   g_inputs.AddBool("EventStudyEnabled", InpEventStudyEnabled, true);
+   g_inputs.AddNum("SweepSLExtraPips", InpSweepSLExtraPips, 3.0);
+   g_inputs.AddNum("SingleTP_R", InpSingleTP_R, 2.0);
+   g_inputs.Add("NewsMode", "OBSERVE_ONLY", "OBSERVE_ONLY");
   }
 
 //+------------------------------------------------------------------+
@@ -409,6 +421,24 @@ int OnInit(void)
       if(!g_ctx[i].Init(g_active.items[i], _Symbol, InpSignalBarPriceSource, g_spec.point, g_acctProfile, startEquity, g_evCfg, err))
          return Fail(err);
      }
+   //--- Phase 3 event-study proxies (one isolated study per timeframe)
+   if(!(InpSweepSLExtraPips >= 0.0) || !(InpSingleTP_R > 0.0))
+      return Fail("SweepSLExtraPips must be >= 0 and SingleTP_R > 0");
+   g_econ = new CLSR_MT5Economics(_Symbol);
+   LSR_StudyConfig sc;
+   sc.sl_extra_pips = InpSweepSLExtraPips;
+   sc.tp_r = InpSingleTP_R;
+   sc.pip_size = InpStrategyPipSize;
+   sc.point = g_spec.point;
+   sc.tick_size = g_spec.tick_size;
+   sc.contract_size = LSR_CommissionContractSize(g_costs, g_spec);
+   sc.digits = g_spec.digits;
+   sc.swap_mode = g_spec.swap_mode;
+   sc.swap_long = g_spec.swap_long;
+   sc.swap_short = g_spec.swap_short;
+   sc.swap_rollover3days = (int)g_spec.swap_rollover3days;
+   for(int i = 0; i < g_ctxCount; i++)
+      g_ctx[i].study.Init(GetPointer(g_ctx[i].events), g_econ, GetPointer(g_window), sc, g_costs);
    g_m1.Init(InpSignalBarPriceSource, g_spec.digits);
    g_m1Count = 0;
    g_firstM1 = 0;
@@ -428,7 +458,7 @@ int OnInit(void)
    g_initialized = true;
 
    WriteContractSnapshots();
-   PrintFormat("LSR Phase 2 initialised: context=%s TimeframeSet=%s active=%s session=%s output=Common\\Files\\%s",
+   PrintFormat("LSR Phase 3 initialised: context=%s TimeframeSet=%s active=%s session=%s output=Common\\Files\\%s",
                LSR_RunContextName(g_runContext), LSR_TimeframeSetToString(g_tfSet), LSR_TimeframeSetToString(g_active),
                LSR_SessionModeName(InpTradingSessionMode), g_out.Dir());
    return INIT_SUCCEEDED;
@@ -482,6 +512,16 @@ void OnTick(void)
    LSR_Bar m1;
    if(usable && g_m1.OnQuote(q, m1))
       OnCompletedM1(m1);
+   if(usable)
+      for(int i = 0; i < g_ctxCount; i++)
+        {
+         g_ctx[i].events.OnTime(q.time);
+         if(InpEventStudyEnabled)
+           {
+            g_ctx[i].study.OnEngineUpdate();
+            g_ctx[i].study.OnQuote(q);
+           }
+        }
 
    for(int i = 0; i < g_ctxCount; i++)
      {
@@ -616,7 +656,14 @@ string FinalizeEvents(void)
    if(g_m1.Flush(m1))
       OnCompletedM1(m1);
    for(int i = 0; i < g_ctxCount; i++)
+     {
       g_ctx[i].events.Flush();
+      if(InpEventStudyEnabled)
+        {
+         g_ctx[i].study.OnEngineUpdate();
+         g_ctx[i].study.Finish();
+        }
+     }
    if(g_m1File != INVALID_HANDLE)
      {
       FileClose(g_m1File);
@@ -638,6 +685,12 @@ string FinalizeEvents(void)
       g_out.RegisterFile("pools_" + tf + ".csv");
       g_out.RegisterFile("touches_" + tf + ".csv");
       combined += tf + ":" + g_eventsSha[i] + ";";
+      if(InpEventStudyEnabled)
+        {
+         if(!g_ctx[i].study.WriteCsv(g_out.Dir() + "event_study_" + tf + ".csv", q))
+            PrintFormat("LSR: cannot write %s event study", tf);
+         g_out.RegisterFile("event_study_" + tf + ".csv");
+        }
      }
 
    //--- configuration consumed by the independent Python reference
@@ -759,7 +812,7 @@ void WriteFinalPackage(const int deinitReason)
    j.BeginObject();
    j.KStr("schema_version", LSR_MANIFEST_SCHEMA_VERSION);
    j.KStr("engine", LSR_ENGINE_NAME);
-   j.KStr("phase", "PHASE_2_LIQUIDITY_MODEL_SWEEP_EVENTS");
+   j.KStr("phase", "PHASE_3_EVENT_STUDY");
    j.KStr("contract_id", LSR_PHASE1_CONTRACT_ID);
    j.KStr("experiment_id", InpExperimentId);
    j.KStr("run_context", LSR_RunContextName(g_runContext));
@@ -868,6 +921,11 @@ void OnDeinit(const int reason)
   {
    if(g_initialized)
       WriteFinalPackage(reason);
+   if(g_econ != NULL)
+     {
+      delete g_econ;
+      g_econ = NULL;
+     }
    for(int i = 0; i < g_ctxCount; i++)
      {
       delete g_ctx[i];

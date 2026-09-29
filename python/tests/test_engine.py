@@ -10,7 +10,7 @@ import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")))
 
 from lsr_reference.engine import (Bar, EventConfig, EventEngine, TfAggregator, WilderAtr, stable_id,  # noqa: E402
                                   PDH, SWING_HIGH, PDL, EQUAL_HIGHS)

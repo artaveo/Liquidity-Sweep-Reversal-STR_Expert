@@ -136,6 +136,16 @@ public:
       return done;
      }
 
+   //--- Completes the open bar as soon as time t is at or past its period end.
+   bool              CompleteIfPast(const datetime t, LSR_Bar &completed)
+     {
+      if(!m_have || t < m_cur.time + m_period)
+         return false;
+      completed = m_cur;
+      m_have = false;
+      return true;
+     }
+
    bool              Flush(LSR_Bar &completed)
      {
       if(!m_have)

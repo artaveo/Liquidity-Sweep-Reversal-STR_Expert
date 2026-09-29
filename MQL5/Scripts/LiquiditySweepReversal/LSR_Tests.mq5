@@ -9,7 +9,7 @@
 #property description "Blocking tests for all phases (no trading)"
 #property script_show_inputs
 
-#include "../../Include/LiquiditySweepReversal/LSR_Phase2.mqh"
+#include "../../Include/LiquiditySweepReversal/LSR_Phase3.mqh"
 
 input bool InpCloseTerminalWhenDone = false; // Close terminal after the run (CI use)
 
@@ -1151,11 +1151,127 @@ void TestPhase2Sources(void)
   }
 
 //+------------------------------------------------------------------+
+//| Phase 3 event-study fixtures (tick level)                        |
+//+------------------------------------------------------------------+
+class CP3Harness
+  {
+public:
+   CLSR_M1Builder    m1;
+   CLSR_EventEngine  eng;
+   CLSR_EventStudy   study;
+   CLSR_LinearEconomics *econ;
+   ulong             seq;
+
+                     CP3Harness(void) { econ = new CLSR_LinearEconomics(100.0, 100.0); seq = 0; }
+                    ~CP3Harness(void) { delete econ; }
+
+   void              Init(void)
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      string err;
+      eng.Init(LSR_TF_M1, c, err);
+      m1.Init(LSR_PRICE_BID, 2);
+      LSR_StudyConfig sc;
+      sc.sl_extra_pips = 3.0;
+      sc.tp_r = 2.0;
+      sc.pip_size = 0.10;
+      sc.point = 0.01;
+      sc.tick_size = 0.01;
+      sc.contract_size = 100.0;
+      sc.digits = 2;
+      sc.swap_mode = SYMBOL_SWAP_MODE_DISABLED;
+      sc.swap_long = 0.0;
+      sc.swap_short = 0.0;
+      sc.swap_rollover3days = 3;
+      LSR_CostModel cm;
+      LSR_CostModelDefaults(cm);
+      study.Init(GetPointer(eng), econ, NULL, sc, cm);
+     }
+
+   void              Tick(const datetime t, const int ms, const double bid, const double ask)
+     {
+      LSR_Quote q;
+      q.seq = ++seq;
+      q.time = t;
+      q.time_msc = (long)t * 1000 + ms;
+      q.bid = bid;
+      q.ask = ask;
+      q.last = 0.0;
+      q.volume = 0;
+      q.flags = 0;
+      LSR_Bar b;
+      if(m1.OnQuote(q, b))
+         eng.OnM1(b);
+      eng.OnTime(q.time);
+      study.OnEngineUpdate();
+      study.OnQuote(q);
+     }
+  };
+
+void TestPhase3EventStudy(void)
+  {
+   Suite("3 Event study");
+   datetime t0 = D'2026.01.05 10:00';
+   //--- A: reclaim control TP; B: confirmed then stopped
+     {
+      CP3Harness h;
+      h.Init();
+      h.eng.InjectLevel(LSR_LV_SWING_HIGH, 2001.00, 2001.00, "fx");
+      h.Tick(t0 + 5, 0, 2000.00, 2000.20);
+      h.Tick(t0 + 30, 0, 2000.10, 2000.30);
+      h.Tick(t0 + 60, 0, 2000.20, 2000.40);           // sweep bar 10:01 open
+      h.Tick(t0 + 80, 0, 2001.40, 2001.60);           // high 2001.40
+      h.Tick(t0 + 110, 0, 2000.60, 2000.80);          // close 2000.60 < 2001.00
+      h.Tick(t0 + 120, 500, 2000.55, 2000.75);        // first tick after close: A enters short @ bid
+      h.Tick(t0 + 150, 0, 2000.10, 2000.30);
+      h.Tick(t0 + 170, 0, 2000.00, 2000.20);          // confirmation bar closes 2000.00 < sweep low 2000.20
+      h.Tick(t0 + 180, 200, 1999.90, 2000.10);        // B enters short @ bid
+      h.Tick(t0 + 270, 0, 1997.50, 1997.70);          // A: ask 1997.70 <= TP 1997.75
+      h.Tick(t0 + 360, 0, 2001.75, 2001.95);          // B: ask 2001.95 >= SL 2001.90
+      h.study.Finish();
+      Check(h.study.TradeCount() == 2, "one SETUP -> hypotheses A and B");
+      int a = (h.study.TradeHyp(0) == LSR_HYP_A_RECLAIM_CONTROL ? 0 : 1), b = 1 - a;
+      Check(h.study.TradeEntryMsc(a) == (long)(t0 + 120) * 1000 + 500, "A enters on the first tick after the sweep close");
+      Check(h.study.TradeDir(a) == -1 && h.study.TradeEntry(a) == 2000.55, "buy-side sweep -> short at Bid");
+      CheckNear(h.study.TradeSL(a), 2001.90, 1e-9, "SL = sweep high + entry spread + 3 pips");
+      double ca = 100.0 * 2000.55 * 0.000016;
+      CheckNear(h.study.TradeR(a), 135.0 + ca, 1e-6, "PlannedRisk1R = stop loss + known commission (per lot)");
+      CheckNear(h.study.TradeTP(a), 1997.75, 1e-9, "net 2R target, rounded outward to the tick grid");
+      Check(h.study.TradeState(a) == "CLOSED" && h.study.TradeReason(a) == "TP", "A closes at TP");
+      CheckNear(h.study.TradeNetR(a), (285.0 - ca) / (135.0 + ca), 1e-6, "A EventStudyNetR = net P/L / PlannedRisk1R");
+      CheckNear(h.study.TradeMae(a), 0.20, 1e-9, "MAE includes the entry tick (spread)");
+      CheckNear(h.study.TradeMfe(a), 2.85, 1e-9, "MFE to the exit tick");
+      Check(h.study.TradeEntryMsc(b) == (long)(t0 + 180) * 1000 + 200 && h.study.TradeEntry(b) == 1999.90, "B enters after the confirmation close");
+      double cb = 100.0 * 1999.90 * 0.000016;
+      Check(h.study.TradeState(b) == "CLOSED" && h.study.TradeReason(b) == "STOP", "B stopped on Ask >= SL");
+      CheckNear(h.study.TradeNetR(b), (-205.0 - cb) / (200.0 + cb), 1e-6, "B realized loss beyond -1R is reported, not clipped");
+     }
+   //--- B fails confirmation
+     {
+      CP3Harness h;
+      h.Init();
+      h.eng.InjectLevel(LSR_LV_SWING_HIGH, 2001.00, 2001.00, "fx");
+      h.Tick(t0 + 5, 0, 2000.00, 2000.20);
+      h.Tick(t0 + 60, 0, 2000.20, 2000.40);
+      h.Tick(t0 + 80, 0, 2001.40, 2001.60);
+      h.Tick(t0 + 110, 0, 2000.60, 2000.80);
+      h.Tick(t0 + 120, 500, 2000.55, 2000.75);
+      h.Tick(t0 + 170, 0, 2000.40, 2000.60);          // confirmation bar closes 2000.40 >= sweep low
+      h.Tick(t0 + 180, 200, 2000.30, 2000.50);
+      h.study.Finish();
+      int b = (h.study.TradeHyp(0) == LSR_HYP_B_NEXT_BAR_CONFIRM ? 0 : 1);
+      Check(h.study.TradeState(b) == "EXPIRED" && h.study.TradeReason(b) == "CONFIRMATION_FAILED", "failed confirmation expires permanently");
+      Check(h.study.TradeState(1 - b) == "CLOSED" && h.study.TradeReason(1 - b) == "END_OF_DATA", "open control proxy closed at end of data");
+     }
+  }
+
+//+------------------------------------------------------------------+
 void OnStart(void)
   {
    g_pass = 0;
    g_fail = 0;
-   g_report = "LSR Phase 1+2 blocking tests — contracts " + LSR_PHASE1_CONTRACT_ID + ", " + LSR_PHASE2_CONTRACT_ID + "\n";
+   g_report = "LSR Phase 1+2 blocking tests — contracts " + LSR_PHASE1_CONTRACT_ID + ", " + LSR_PHASE2_CONTRACT_ID + ", " + LSR_PHASE3_CONTRACT_ID + "\n";
 
    TestJson();
    TestTimeframes();
@@ -1171,6 +1287,7 @@ void OnStart(void)
    TestPhase2Bars();
    TestPhase2Sweeps();
    TestPhase2Sources();
+   TestPhase3EventStudy();
 
    string summary = StringFormat("RESULT: %s  passed=%d failed=%d  build=%d",
                                  g_fail == 0 ? "PASS" : "FAIL", g_pass, g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD));

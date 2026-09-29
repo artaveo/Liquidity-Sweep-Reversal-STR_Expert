@@ -682,18 +682,7 @@ private:
    void              TrackDay(const LSR_Bar &b)
      {
       datetime d = LSR_BrokerDayStart(b.time);
-      if(m_dayHave && d != m_day)
-        {
-         if(m_cfg.use_previous_day && m_day != LSR_BrokerDayStart(m_firstM1))
-           {
-            double one[1];
-            one[0] = m_dayHi;
-            Queue(LSR_LV_PDH, m_dayHi, m_dayHi, one, LSR_IsoDate(m_day), m_day + LSR_SECONDS_PER_DAY, 0, false, 0.0, "");
-            one[0] = m_dayLo;
-            Queue(LSR_LV_PDL, m_dayLo, m_dayLo, one, LSR_IsoDate(m_day), m_day + LSR_SECONDS_PER_DAY, 0, false, 0.0, "");
-           }
-         m_dayHave = false;
-        }
+      FinalizeDayIfPast(b.time);
       if(!m_dayHave)
         {
          m_day = d;
@@ -710,24 +699,29 @@ private:
         }
      }
 
+   //--- A day is complete once any later timestamp belongs to a new broker day.
+   void              FinalizeDayIfPast(const datetime t)
+     {
+      datetime d = LSR_BrokerDayStart(t);
+      if(m_dayHave && d != m_day)
+        {
+         if(m_cfg.use_previous_day && m_day != LSR_BrokerDayStart(m_firstM1))
+           {
+            double one[1];
+            one[0] = m_dayHi;
+            Queue(LSR_LV_PDH, m_dayHi, m_dayHi, one, LSR_IsoDate(m_day), m_day + LSR_SECONDS_PER_DAY, 0, false, 0.0, "");
+            one[0] = m_dayLo;
+            Queue(LSR_LV_PDL, m_dayLo, m_dayLo, one, LSR_IsoDate(m_day), m_day + LSR_SECONDS_PER_DAY, 0, false, 0.0, "");
+           }
+         m_dayHave = false;
+        }
+     }
+
    void              TrackSession(const LSR_Bar &b)
      {
       datetime ds = LSR_BrokerDayStart(b.time);
       int sod = (int)(b.time - ds);
-      if(m_sesHave && (ds != m_sesDate || sod >= m_cfg.session_end_sec))
-        {
-         if(m_cfg.use_previous_session && m_firstM1 <= m_sesDate + m_cfg.session_start_sec)
-           {
-            double one[1];
-            string inst = LSR_IsoTime(m_sesDate + m_cfg.session_start_sec);
-            datetime avail = m_sesDate + m_cfg.session_end_sec;
-            one[0] = m_sesHi;
-            Queue(LSR_LV_PSH, m_sesHi, m_sesHi, one, inst, avail, 0, false, 0.0, "");
-            one[0] = m_sesLo;
-            Queue(LSR_LV_PSL, m_sesLo, m_sesLo, one, inst, avail, 0, false, 0.0, "");
-           }
-         m_sesHave = false;
-        }
+      FinalizeSessionIfPast(b.time);
       if(sod >= m_cfg.session_start_sec && sod < m_cfg.session_end_sec)
         {
          if(!m_sesHave)
@@ -744,6 +738,27 @@ private:
             if(b.low < m_sesLo)
                m_sesLo = b.low;
            }
+        }
+     }
+
+   //--- A session is complete once any later timestamp is on a new day or past its end.
+   void              FinalizeSessionIfPast(const datetime t)
+     {
+      datetime ds = LSR_BrokerDayStart(t);
+      int sod = (int)(t - ds);
+      if(m_sesHave && (ds != m_sesDate || sod >= m_cfg.session_end_sec))
+        {
+         if(m_cfg.use_previous_session && m_firstM1 <= m_sesDate + m_cfg.session_start_sec)
+           {
+            double one[1];
+            string inst = LSR_IsoTime(m_sesDate + m_cfg.session_start_sec);
+            datetime avail = m_sesDate + m_cfg.session_end_sec;
+            one[0] = m_sesHi;
+            Queue(LSR_LV_PSH, m_sesHi, m_sesHi, one, inst, avail, 0, false, 0.0, "");
+            one[0] = m_sesLo;
+            Queue(LSR_LV_PSL, m_sesLo, m_sesLo, one, inst, avail, 0, false, 0.0, "");
+           }
+         m_sesHave = false;
         }
      }
 
@@ -1262,6 +1277,21 @@ public:
          ProcessBar(done, m1.time - (m1.time % m_period));
      }
 
+   //--- Time advance from the tick stream (call after the tick's completed M1, if any).
+   //--- Completes the day/session and the SignalTimeframe bar on the first tick after
+   //--- their end, so a sweep is known at the first executable tick after the close.
+   //--- Produces exactly the same ledgers as the M1-only path (OnM1).
+   void              OnTime(const datetime t)
+     {
+      if(!m_haveFirst)
+         return;
+      FinalizeDayIfPast(t);
+      FinalizeSessionIfPast(t);
+      LSR_Bar done;
+      if(m_agg.CompleteIfPast(t, done))
+         ProcessBar(done, t - (t % m_period));
+     }
+
    void              Flush(void)
      {
       LSR_Bar done;
@@ -1334,6 +1364,41 @@ public:
    int               EventPoolIndex(const int i) const { return m_events[i].pool; }
    string            LevelId(const int i) const      { return m_levels[i].id; }
    int               ActiveHighCount(void) const     { return ArraySize(m_activeHigh); }
+   bool              GetBar(const int k, LSR_Bar &b) const
+     {
+      if(k < 0 || k >= m_nBars)
+         return false;
+      b = m_bars[k];
+      return true;
+     }
+   long              EventBarIndex(const int i) const { return m_events[i].bar_index; }
+   void              EventBar(const int i, LSR_Bar &b) const
+     {
+      b.time = m_events[i].bar_time;
+      b.period = m_period;
+      b.open = m_events[i].open;
+      b.high = m_events[i].high;
+      b.low = m_events[i].low;
+      b.close = m_events[i].close;
+      b.ticks = 0;
+     }
+   string            EventMemberIds(const int i) const { return m_pools[m_events[i].pool].member_ids; }
+   //--- Swing prominence of the first pool member that carries one (0C.19 diagnostic).
+   bool              EventSwingProminence(const int i, double &v) const
+     {
+      int pi = m_events[i].pool;
+      for(int k = 0; k < m_pools[pi].mem_count; k++)
+        {
+         int li = m_poolMem[m_pools[pi].mem_start + k];
+         if(m_levels[li].has_prominence)
+           {
+            v = m_levels[li].prominence;
+            return true;
+           }
+        }
+      return false;
+     }
+   int               Period(void) const { return m_period; }
 
    //+---------------------------------------------------------------+
    //| Ledgers (CSV, UTF-8). Returns false if a file cannot be opened.|

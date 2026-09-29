@@ -1,0 +1,1096 @@
+{
+  "contract_id": "LSR-PHASE3-EVENTSTUDY-2026-09-29",
+  "package": "C:\\Users\\zakir_ip1m5wj\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\LSR\\LSR-P3-EVENTSTUDY",
+  "rules": {
+    "min_events": 100,
+    "min_independent_days": 20,
+    "confidence": 0.95,
+    "net_r": "RealizedNetPnL / PlannedRisk1R; 1 lot; LIVE_NATIVE_STOP; SingleTP 2R net; no BE, no re-entry",
+    "analysis_set": "closed proxies, entry inside StrategyEntryWindow, not in data quarantine"
+  },
+  "timeframes": {
+    "M5": {
+      "hypotheses": {
+        "A_RECLAIM_CONTROL": {
+          "events": 3273,
+          "independent_days": 127,
+          "mean_net_r": -0.18228725481209898,
+          "median_net_r": -1.005368,
+          "stdev_net_r": 1.3749330526653818,
+          "win_rate": 0.27925450656889705,
+          "upper95_mean_net_r": -0.14258619987756357,
+          "lower05_mean_net_r": -0.2212063789312977,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": -0.16270861472655057,
+          "mean_costs_r": 0.019578652612282307,
+          "mean_entry_spread_pips": 5.750137488542622,
+          "mean_spread_to_stop": 0.1427762787669982,
+          "mean_mfe_r": 0.9076898579285059,
+          "mean_mae_r": 0.8741077858234036,
+          "mean_holding_minutes": 30.33476932477849,
+          "exit_reasons": {
+            "STOP": 2358,
+            "TP": 911,
+            "GAP_TP": 3,
+            "GAP_STOP": 1
+          },
+          "swap_nights_total": 38,
+          "proxies": 3680,
+          "excluded": {
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 397,
+            "DATA_QUARANTINE": 7,
+            "NOT_TRADED_INVALID_STOP_GEOMETRY": 3
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 1705,
+              "mean_net_r": -0.22542326275659821
+            },
+            "SHORT": {
+              "events": 1568,
+              "mean_net_r": -0.1353823482142857
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 3260,
+              "mean_net_r": -0.18358662914110427
+            },
+            "1": {
+              "events": 12,
+              "mean_net_r": -0.01169191666666671
+            },
+            "2": {
+              "events": 1,
+              "mean_net_r": 2.006529
+            }
+          },
+          "by_source_tags": {
+            "PDH;PSH;SWING_HIGH": {
+              "events": 1,
+              "mean_net_r": -2.513516
+            },
+            "PDH;SWING_HIGH": {
+              "events": 5,
+              "mean_net_r": -0.41575179999999995
+            },
+            "PDL": {
+              "events": 1,
+              "mean_net_r": 2.001052
+            },
+            "PDL;PSL;SWING_LOW": {
+              "events": 7,
+              "mean_net_r": -0.17125400000000002
+            },
+            "PDL;SWING_LOW": {
+              "events": 11,
+              "mean_net_r": 0.9048165454545455
+            },
+            "PSH": {
+              "events": 3,
+              "mean_net_r": -1.142291
+            },
+            "PSH;SWING_HIGH": {
+              "events": 12,
+              "mean_net_r": -0.24859799999999996
+            },
+            "PSL": {
+              "events": 1,
+              "mean_net_r": 2.024038
+            },
+            "PSL;SWING_LOW": {
+              "events": 9,
+              "mean_net_r": -0.8189778888888889
+            },
+            "PSL;SWING_LOW;EQUAL_LOWS": {
+              "events": 1,
+              "mean_net_r": -1.003866
+            },
+            "SWING_HIGH": {
+              "events": 1495,
+              "mean_net_r": -0.13561435317725754
+            },
+            "SWING_HIGH;EQUAL_HIGHS": {
+              "events": 52,
+              "mean_net_r": 0.028197307692307712
+            },
+            "SWING_LOW": {
+              "events": 1625,
+              "mean_net_r": -0.2300046326153846
+            },
+            "SWING_LOW;EQUAL_LOWS": {
+              "events": 50,
+              "mean_net_r": -0.29987524
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 1032,
+              "mean_net_r": -0.24689293604651164
+            },
+            "H08_13": {
+              "events": 806,
+              "mean_net_r": -0.15954667866004965
+            },
+            "H13_17": {
+              "events": 729,
+              "mean_net_r": -0.1787818477366255
+            },
+            "H17_24": {
+              "events": 706,
+              "mean_net_r": -0.11743071529745043
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 646,
+              "mean_net_r": -0.2880348529411765
+            },
+            "MONDAY": {
+              "events": 604,
+              "mean_net_r": -0.15420547847682117
+            },
+            "THURSDAY": {
+              "events": 697,
+              "mean_net_r": -0.1247571793400287
+            },
+            "TUESDAY": {
+              "events": 701,
+              "mean_net_r": -0.23909936519258201
+            },
+            "WEDNESDAY": {
+              "events": 625,
+              "mean_net_r": -0.1005618432
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 348,
+              "mean_net_r": -0.01727102873563218
+            },
+            "3_5": {
+              "events": 637,
+              "mean_net_r": -0.1964594819466248
+            },
+            "GE5": {
+              "events": 2288,
+              "mean_net_r": -0.20344019973776226
+            }
+          }
+        },
+        "B_NEXT_BAR_CONFIRM": {
+          "events": 651,
+          "independent_days": 126,
+          "mean_net_r": -0.09320715975422426,
+          "median_net_r": -1.002228,
+          "stdev_net_r": 1.4053523660303842,
+          "win_rate": 0.30721966205837176,
+          "upper95_mean_net_r": -0.002854154311648993,
+          "lower05_mean_net_r": -0.17870881112737919,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": -0.08097910599078341,
+          "mean_costs_r": 0.012228067588325653,
+          "mean_entry_spread_pips": 5.620430107526881,
+          "mean_spread_to_stop": 0.06138517170127406,
+          "mean_mfe_r": 0.9945543041474654,
+          "mean_mae_r": 0.8464488248847927,
+          "mean_holding_minutes": 132.55558115719407,
+          "exit_reasons": {
+            "STOP": 450,
+            "TP": 199,
+            "GAP_TP": 1,
+            "GAP_STOP": 1
+          },
+          "swap_nights_total": 61,
+          "proxies": 3680,
+          "excluded": {
+            "NOT_TRADED_CONFIRMATION_FAILED": 2856,
+            "NOT_TRADED_CONFIRMATION_CONFLICT": 95,
+            "DATA_QUARANTINE": 6,
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 71,
+            "NOT_TRADED_INVALID_STOP_GEOMETRY": 1
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 338,
+              "mean_net_r": -0.13037597633136094
+            },
+            "SHORT": {
+              "events": 313,
+              "mean_net_r": -0.05306958785942491
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 646,
+              "mean_net_r": -0.08745536068111455
+            },
+            "1": {
+              "events": 5,
+              "mean_net_r": -0.8363396
+            }
+          },
+          "by_source_tags": {
+            "PDL;PSL;SWING_LOW": {
+              "events": 2,
+              "mean_net_r": 0.4461625
+            },
+            "PDL;SWING_LOW": {
+              "events": 1,
+              "mean_net_r": -1.017592
+            },
+            "PSH;SWING_HIGH": {
+              "events": 1,
+              "mean_net_r": -1.027076
+            },
+            "PSL;SWING_LOW": {
+              "events": 1,
+              "mean_net_r": -1.081378
+            },
+            "SWING_HIGH": {
+              "events": 302,
+              "mean_net_r": -0.02813505629139072
+            },
+            "SWING_HIGH;EQUAL_HIGHS": {
+              "events": 10,
+              "mean_net_r": -0.7086918
+            },
+            "SWING_LOW": {
+              "events": 327,
+              "mean_net_r": -0.11757228440366972
+            },
+            "SWING_LOW;EQUAL_LOWS": {
+              "events": 7,
+              "mean_net_r": -0.6306140000000001
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 190,
+              "mean_net_r": -0.0147126
+            },
+            "H08_13": {
+              "events": 172,
+              "mean_net_r": -0.20492861046511626
+            },
+            "H13_17": {
+              "events": 165,
+              "mean_net_r": -0.04653958787878786
+            },
+            "H17_24": {
+              "events": 124,
+              "mean_net_r": -0.12061059677419356
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 136,
+              "mean_net_r": -0.1666957132352941
+            },
+            "MONDAY": {
+              "events": 126,
+              "mean_net_r": -0.010910936507936501
+            },
+            "THURSDAY": {
+              "events": 134,
+              "mean_net_r": -0.05118137313432836
+            },
+            "TUESDAY": {
+              "events": 125,
+              "mean_net_r": -0.16874541599999998
+            },
+            "WEDNESDAY": {
+              "events": 130,
+              "mean_net_r": -0.06677680769230769
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 76,
+              "mean_net_r": 0.18129475
+            },
+            "3_5": {
+              "events": 128,
+              "mean_net_r": -0.301005734375
+            },
+            "GE5": {
+              "events": 447,
+              "mean_net_r": -0.08037478299776285
+            }
+          }
+        }
+      },
+      "reversal_vs_continuation": {
+        "1": {
+          "REVERSAL": 1896,
+          "CONTINUATION": 1780,
+          "UNRESOLVED": 4,
+          "NA": 0,
+          "reversal_share": 0.5152173913043478
+        },
+        "3": {
+          "REVERSAL": 1922,
+          "CONTINUATION": 1754,
+          "UNRESOLVED": 4,
+          "NA": 0,
+          "reversal_share": 0.5222826086956521
+        },
+        "5": {
+          "REVERSAL": 1905,
+          "CONTINUATION": 1773,
+          "UNRESOLVED": 2,
+          "NA": 0,
+          "reversal_share": 0.5176630434782609
+        },
+        "10": {
+          "REVERSAL": 1909,
+          "CONTINUATION": 1770,
+          "UNRESOLVED": 1,
+          "NA": 0,
+          "reversal_share": 0.51875
+        },
+        "20": {
+          "REVERSAL": 1928,
+          "CONTINUATION": 1752,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.5239130434782608
+        }
+      },
+      "early_stop": {
+        "classification": "STOP_EARLY_REDESIGN",
+        "reason": "Upper95(mean EventStudyNetR) < 0 for A and B"
+      }
+    },
+    "M15": {
+      "hypotheses": {
+        "A_RECLAIM_CONTROL": {
+          "events": 1090,
+          "independent_days": 127,
+          "mean_net_r": -0.05565686697247706,
+          "median_net_r": -1.0033645,
+          "stdev_net_r": 1.4263155004959394,
+          "win_rate": 0.3201834862385321,
+          "upper95_mean_net_r": 0.019638458598726108,
+          "lower05_mean_net_r": -0.12949367343336277,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": -0.04121663119266056,
+          "mean_costs_r": 0.014440239449541283,
+          "mean_entry_spread_pips": 5.835137614678899,
+          "mean_spread_to_stop": 0.09293811448912188,
+          "mean_mfe_r": 0.9983799403669724,
+          "mean_mae_r": 0.8421671045871559,
+          "mean_holding_minutes": 84.48678899082569,
+          "exit_reasons": {
+            "STOP": 741,
+            "TP": 348,
+            "GAP_TP": 1
+          },
+          "swap_nights_total": 51,
+          "proxies": 1210,
+          "excluded": {
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 110,
+            "DATA_QUARANTINE": 7,
+            "NOT_TRADED_INVALID_STOP_GEOMETRY": 3
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 563,
+              "mean_net_r": -0.10313812078152752
+            },
+            "SHORT": {
+              "events": 527,
+              "mean_net_r": -0.004932111954459202
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 1090,
+              "mean_net_r": -0.05565686697247706
+            }
+          },
+          "by_source_tags": {
+            "PDH": {
+              "events": 1,
+              "mean_net_r": 2.01067
+            },
+            "PDH;PSH;SWING_HIGH": {
+              "events": 6,
+              "mean_net_r": -0.5112355000000001
+            },
+            "PDH;SWING_HIGH": {
+              "events": 7,
+              "mean_net_r": 0.25804442857142856
+            },
+            "PDL": {
+              "events": 3,
+              "mean_net_r": -0.002305666666666687
+            },
+            "PDL;PSL;SWING_LOW": {
+              "events": 7,
+              "mean_net_r": -0.1761945714285714
+            },
+            "PDL;SWING_LOW": {
+              "events": 12,
+              "mean_net_r": 0.2502055
+            },
+            "PSH": {
+              "events": 6,
+              "mean_net_r": -0.5656963333333334
+            },
+            "PSH;SWING_HIGH": {
+              "events": 11,
+              "mean_net_r": 0.09964490909090908
+            },
+            "PSL": {
+              "events": 3,
+              "mean_net_r": 0.005831666666666679
+            },
+            "PSL;SWING_LOW": {
+              "events": 5,
+              "mean_net_r": -0.6372194
+            },
+            "SWING_HIGH": {
+              "events": 491,
+              "mean_net_r": -0.016448672097759673
+            },
+            "SWING_HIGH;EQUAL_HIGHS": {
+              "events": 5,
+              "mean_net_r": 1.4051182
+            },
+            "SWING_LOW": {
+              "events": 528,
+              "mean_net_r": -0.10885908522727274
+            },
+            "SWING_LOW;EQUAL_LOWS": {
+              "events": 5,
+              "mean_net_r": 0.16345000000000004
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 365,
+              "mean_net_r": -0.14181943835616437
+            },
+            "H08_13": {
+              "events": 248,
+              "mean_net_r": -0.07675345564516128
+            },
+            "H13_17": {
+              "events": 254,
+              "mean_net_r": -0.06017729133858268
+            },
+            "H17_24": {
+              "events": 223,
+              "mean_net_r": 0.11398205829596414
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 189,
+              "mean_net_r": -0.1720152751322751
+            },
+            "MONDAY": {
+              "events": 205,
+              "mean_net_r": -0.10260005853658537
+            },
+            "THURSDAY": {
+              "events": 235,
+              "mean_net_r": -0.037492753191489356
+            },
+            "TUESDAY": {
+              "events": 225,
+              "mean_net_r": 0.006428959999999996
+            },
+            "WEDNESDAY": {
+              "events": 236,
+              "mean_net_r": 0.0010262500000000083
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 108,
+              "mean_net_r": -0.09503566666666667
+            },
+            "3_5": {
+              "events": 193,
+              "mean_net_r": -0.00040945077720207245
+            },
+            "GE5": {
+              "events": 789,
+              "mean_net_r": -0.06378087325728769
+            }
+          }
+        },
+        "B_NEXT_BAR_CONFIRM": {
+          "events": 211,
+          "independent_days": 103,
+          "mean_net_r": -0.03180203317535545,
+          "median_net_r": -1.002365,
+          "stdev_net_r": 1.4615058981425009,
+          "win_rate": 0.33175355450236965,
+          "upper95_mean_net_r": 0.13229465402843604,
+          "lower05_mean_net_r": -0.18607721634615382,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": -0.020369018957345972,
+          "mean_costs_r": 0.011433004739336493,
+          "mean_entry_spread_pips": 5.630805687203791,
+          "mean_spread_to_stop": 0.03804620795537485,
+          "mean_mfe_r": 1.0583029099526067,
+          "mean_mae_r": 0.8408109289099526,
+          "mean_holding_minutes": 292.9791469194313,
+          "exit_reasons": {
+            "TP": 69,
+            "STOP": 138,
+            "GAP_STOP": 3,
+            "GAP_TP": 1
+          },
+          "swap_nights_total": 36,
+          "proxies": 1210,
+          "excluded": {
+            "NOT_TRADED_CONFIRMATION_FAILED": 939,
+            "NOT_TRADED_CONFIRMATION_CONFLICT": 33,
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 21,
+            "DATA_QUARANTINE": 6
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 111,
+              "mean_net_r": -0.18729034234234235
+            },
+            "SHORT": {
+              "events": 100,
+              "mean_net_r": 0.14078999
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 211,
+              "mean_net_r": -0.03180203317535545
+            }
+          },
+          "by_source_tags": {
+            "PDH;PSH;SWING_HIGH": {
+              "events": 1,
+              "mean_net_r": 2.004285
+            },
+            "PDL;PSL;SWING_LOW": {
+              "events": 2,
+              "mean_net_r": 0.5016965
+            },
+            "PDL;SWING_LOW": {
+              "events": 3,
+              "mean_net_r": -1.0032216666666667
+            },
+            "PSH;SWING_HIGH": {
+              "events": 2,
+              "mean_net_r": -1.0154365
+            },
+            "PSL": {
+              "events": 1,
+              "mean_net_r": -1.00534
+            },
+            "PSL;SWING_LOW": {
+              "events": 2,
+              "mean_net_r": 0.49942999999999993
+            },
+            "SWING_HIGH": {
+              "events": 96,
+              "mean_net_r": 0.12607886458333334
+            },
+            "SWING_HIGH;EQUAL_HIGHS": {
+              "events": 1,
+              "mean_net_r": 2.002016
+            },
+            "SWING_LOW": {
+              "events": 102,
+              "mean_net_r": -0.2037249019607843
+            },
+            "SWING_LOW;EQUAL_LOWS": {
+              "events": 1,
+              "mean_net_r": 2.003464
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 56,
+              "mean_net_r": 0.00800312499999998
+            },
+            "H08_13": {
+              "events": 56,
+              "mean_net_r": -0.023063696428571426
+            },
+            "H13_17": {
+              "events": 61,
+              "mean_net_r": 0.12099909836065574
+            },
+            "H17_24": {
+              "events": 38,
+              "mean_net_r": -0.3486258421052632
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 43,
+              "mean_net_r": -0.241257
+            },
+            "MONDAY": {
+              "events": 39,
+              "mean_net_r": 0.14124507692307695
+            },
+            "THURSDAY": {
+              "events": 44,
+              "mean_net_r": -0.26831875
+            },
+            "TUESDAY": {
+              "events": 38,
+              "mean_net_r": 0.022738026315789445
+            },
+            "WEDNESDAY": {
+              "events": 47,
+              "mean_net_r": 0.1935583829787234
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 21,
+              "mean_net_r": 0.13280852380952382
+            },
+            "3_5": {
+              "events": 39,
+              "mean_net_r": -0.044767384615384605
+            },
+            "GE5": {
+              "events": 151,
+              "mean_net_r": -0.05134622516556292
+            }
+          }
+        }
+      },
+      "reversal_vs_continuation": {
+        "1": {
+          "REVERSAL": 641,
+          "CONTINUATION": 569,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.5297520661157025
+        },
+        "3": {
+          "REVERSAL": 651,
+          "CONTINUATION": 559,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.5380165289256198
+        },
+        "5": {
+          "REVERSAL": 643,
+          "CONTINUATION": 567,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.531404958677686
+        },
+        "10": {
+          "REVERSAL": 661,
+          "CONTINUATION": 548,
+          "UNRESOLVED": 1,
+          "NA": 0,
+          "reversal_share": 0.5462809917355372
+        },
+        "20": {
+          "REVERSAL": 627,
+          "CONTINUATION": 581,
+          "UNRESOLVED": 1,
+          "NA": 1,
+          "reversal_share": 0.5186104218362283
+        }
+      },
+      "early_stop": {
+        "classification": "CONTINUE",
+        "reason": "at least one hypothesis has Upper95(mean EventStudyNetR) >= 0"
+      }
+    },
+    "H1": {
+      "hypotheses": {
+        "A_RECLAIM_CONTROL": {
+          "events": 282,
+          "independent_days": 113,
+          "mean_net_r": -0.10985970921985815,
+          "median_net_r": -1.0038245,
+          "stdev_net_r": 1.4060712885509712,
+          "win_rate": 0.3049645390070922,
+          "upper95_mean_net_r": 0.016471494505494535,
+          "lower05_mean_net_r": -0.23383059550561802,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": -0.0964170390070922,
+          "mean_costs_r": 0.013442670212765958,
+          "mean_entry_spread_pips": 5.695390070921985,
+          "mean_spread_to_stop": 0.04926044432844043,
+          "mean_mfe_r": 1.048356645390071,
+          "mean_mae_r": 0.8406794326241135,
+          "mean_holding_minutes": 319.58492907801417,
+          "exit_reasons": {
+            "STOP": 195,
+            "TP": 86,
+            "GAP_STOP": 1
+          },
+          "swap_nights_total": 59,
+          "proxies": 316,
+          "excluded": {
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 28,
+            "DATA_QUARANTINE": 3,
+            "NOT_TRADED_INVALID_STOP_GEOMETRY": 2,
+            "OPEN_AT_END_OF_DATA": 1
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 153,
+              "mean_net_r": -0.22396157516339868
+            },
+            "SHORT": {
+              "events": 129,
+              "mean_net_r": 0.025470410852713177
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 282,
+              "mean_net_r": -0.10985970921985815
+            }
+          },
+          "by_source_tags": {
+            "PDH": {
+              "events": 6,
+              "mean_net_r": 0.46505033333333334
+            },
+            "PDH;PSH;SWING_HIGH": {
+              "events": 9,
+              "mean_net_r": -0.009603888888888893
+            },
+            "PDH;SWING_HIGH": {
+              "events": 2,
+              "mean_net_r": 0.4527865
+            },
+            "PDL": {
+              "events": 4,
+              "mean_net_r": 0.48937850000000005
+            },
+            "PDL;PSL;SWING_LOW": {
+              "events": 9,
+              "mean_net_r": -0.3448827777777777
+            },
+            "PDL;SWING_LOW": {
+              "events": 14,
+              "mean_net_r": -0.361738
+            },
+            "PSH": {
+              "events": 10,
+              "mean_net_r": 0.21346920000000008
+            },
+            "PSH;SWING_HIGH": {
+              "events": 8,
+              "mean_net_r": 1.251916125
+            },
+            "PSH;SWING_HIGH;EQUAL_HIGHS": {
+              "events": 1,
+              "mean_net_r": 2.012351
+            },
+            "PSL": {
+              "events": 7,
+              "mean_net_r": -1.0317394285714285
+            },
+            "PSL;SWING_LOW": {
+              "events": 9,
+              "mean_net_r": -0.3636383333333333
+            },
+            "SWING_HIGH": {
+              "events": 93,
+              "mean_net_r": -0.15576482795698926
+            },
+            "SWING_LOW": {
+              "events": 110,
+              "mean_net_r": -0.15964033636363634
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 84,
+              "mean_net_r": -0.05212076190476189
+            },
+            "H08_13": {
+              "events": 56,
+              "mean_net_r": -0.050427767857142855
+            },
+            "H13_17": {
+              "events": 57,
+              "mean_net_r": -0.1151547192982456
+            },
+            "H17_24": {
+              "events": 85,
+              "mean_net_r": -0.20252376470588235
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 45,
+              "mean_net_r": 0.16168497777777777
+            },
+            "MONDAY": {
+              "events": 53,
+              "mean_net_r": -0.3412828490566038
+            },
+            "THURSDAY": {
+              "events": 53,
+              "mean_net_r": -0.046764207547169784
+            },
+            "TUESDAY": {
+              "events": 77,
+              "mean_net_r": -0.012163038961038965
+            },
+            "WEDNESDAY": {
+              "events": 54,
+              "mean_net_r": -0.3102447037037037
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 33,
+              "mean_net_r": -0.004739121212121197
+            },
+            "3_5": {
+              "events": 51,
+              "mean_net_r": -0.40728039215686274
+            },
+            "GE5": {
+              "events": 198,
+              "mean_net_r": -0.05077144949494949
+            }
+          }
+        },
+        "B_NEXT_BAR_CONFIRM": {
+          "events": 54,
+          "independent_days": 46,
+          "mean_net_r": 0.359034462962963,
+          "median_net_r": -1.000743,
+          "stdev_net_r": 1.5797057996532942,
+          "win_rate": 0.4444444444444444,
+          "upper95_mean_net_r": 0.7060506981132072,
+          "lower05_mean_net_r": 0.009804509433962251,
+          "bootstrap": {
+            "method": "day-block",
+            "reps": 10000,
+            "seed": 20260929
+          },
+          "mean_gross_r": 0.373119537037037,
+          "mean_costs_r": 0.01408512962962963,
+          "mean_entry_spread_pips": 5.601851851851852,
+          "mean_spread_to_stop": 0.01875996328939027,
+          "mean_mfe_r": 1.1942751666666667,
+          "mean_mae_r": 0.7324309999999999,
+          "mean_holding_minutes": 1019.820987654321,
+          "exit_reasons": {
+            "TP": 23,
+            "STOP": 29,
+            "GAP_TP": 1,
+            "GAP_STOP": 1
+          },
+          "swap_nights_total": 36,
+          "proxies": 316,
+          "excluded": {
+            "NOT_TRADED_CONFIRMATION_FAILED": 243,
+            "NOT_TRADED_CONFIRMATION_CONFLICT": 11,
+            "OUTSIDE_STRATEGY_ENTRY_WINDOW": 7,
+            "DATA_QUARANTINE": 1
+          },
+          "by_direction": {
+            "LONG": {
+              "events": 28,
+              "mean_net_r": 0.3431690357142857
+            },
+            "SHORT": {
+              "events": 26,
+              "mean_net_r": 0.3761203076923077
+            }
+          },
+          "by_touch_bucket": {
+            "0": {
+              "events": 54,
+              "mean_net_r": 0.359034462962963
+            }
+          },
+          "by_source_tags": {
+            "PDH": {
+              "events": 1,
+              "mean_net_r": 1.988844
+            },
+            "PDH;PSH;SWING_HIGH": {
+              "events": 3,
+              "mean_net_r": 1.0053796666666666
+            },
+            "PDL": {
+              "events": 2,
+              "mean_net_r": 0.456538
+            },
+            "PDL;PSL;SWING_LOW": {
+              "events": 2,
+              "mean_net_r": -1.0438635
+            },
+            "PDL;SWING_LOW": {
+              "events": 1,
+              "mean_net_r": 2.002091
+            },
+            "PSH": {
+              "events": 1,
+              "mean_net_r": 2.059761
+            },
+            "PSH;SWING_HIGH": {
+              "events": 4,
+              "mean_net_r": 1.25230275
+            },
+            "PSL": {
+              "events": 1,
+              "mean_net_r": -1.03451
+            },
+            "PSL;SWING_LOW": {
+              "events": 2,
+              "mean_net_r": -1.062249
+            },
+            "SWING_HIGH": {
+              "events": 17,
+              "mean_net_r": -0.13498982352941175
+            },
+            "SWING_LOW": {
+              "events": 20,
+              "mean_net_r": 0.59701505
+            }
+          },
+          "by_time_bucket": {
+            "H00_08": {
+              "events": 19,
+              "mean_net_r": 0.8927827894736843
+            },
+            "H08_13": {
+              "events": 15,
+              "mean_net_r": -0.21061506666666668
+            },
+            "H13_17": {
+              "events": 9,
+              "mean_net_r": 0.3292244444444445
+            },
+            "H17_24": {
+              "events": 11,
+              "mean_net_r": 0.23829036363636363
+            }
+          },
+          "by_weekday": {
+            "FRIDAY": {
+              "events": 13,
+              "mean_net_r": -0.3211013076923077
+            },
+            "MONDAY": {
+              "events": 9,
+              "mean_net_r": -0.004932444444444468
+            },
+            "SATURDAY": {
+              "events": 1,
+              "mean_net_r": 2.059761
+            },
+            "THURSDAY": {
+              "events": 9,
+              "mean_net_r": 0.5474224444444444
+            },
+            "TUESDAY": {
+              "events": 14,
+              "mean_net_r": 1.1334329285714284
+            },
+            "WEDNESDAY": {
+              "events": 8,
+              "mean_net_r": 0.09399325
+            }
+          },
+          "by_spread_bucket": {
+            "2_3": {
+              "events": 5,
+              "mean_net_r": -0.4009130000000001
+            },
+            "3_5": {
+              "events": 9,
+              "mean_net_r": 0.6508306666666667
+            },
+            "GE5": {
+              "events": 40,
+              "mean_net_r": 0.38837375
+            }
+          }
+        }
+      },
+      "reversal_vs_continuation": {
+        "1": {
+          "REVERSAL": 161,
+          "CONTINUATION": 155,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.509493670886076
+        },
+        "3": {
+          "REVERSAL": 178,
+          "CONTINUATION": 138,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.5632911392405063
+        },
+        "5": {
+          "REVERSAL": 166,
+          "CONTINUATION": 150,
+          "UNRESOLVED": 0,
+          "NA": 0,
+          "reversal_share": 0.5253164556962026
+        },
+        "10": {
+          "REVERSAL": 161,
+          "CONTINUATION": 154,
+          "UNRESOLVED": 0,
+          "NA": 1,
+          "reversal_share": 0.5111111111111111
+        },
+        "20": {
+          "REVERSAL": 156,
+          "CONTINUATION": 157,
+          "UNRESOLVED": 0,
+          "NA": 3,
+          "reversal_share": 0.4984025559105431
+        }
+      },
+      "early_stop": {
+        "classification": "INCONCLUSIVE",
+        "reason": "sample minima not met for both hypotheses"
+      }
+    }
+  },
+  "data_gate": "DATA-PASSED",
+  "non_default_inputs": [],
+  "experiment_id": "LSR-P3-EVENTSTUDY",
+  "project_classification": "CONTINUE",
+  "removed_timeframes": [
+    "M5"
+  ]
+}

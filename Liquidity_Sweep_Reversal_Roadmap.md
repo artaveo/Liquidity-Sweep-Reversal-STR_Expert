@@ -1562,6 +1562,32 @@ This classification is descriptive. The early-stop decision is based on NetR, no
 
 The event-study dataset must be complete, reproducible, and split into clearly labeled control/confirmation hypotheses with no use of 2025 holdout information.
 
+### 3.8 Phase 3 implementation closures (binding)
+
+1. **Proxy trades.** Every `SETUP` event of a timeframe produces two proxies, A and B, that are independent of each other. Each proxy is 1 lot. No portfolio, risk-admission, spread or cost gate applies; the study is diagnostic (3.1). Spread is recorded and stratified instead.
+2. **Entry.** Entry is on the first usable tick at or after the signal close plus `FixedExecutionDelayMs` (0C.11). The signal close is the sweep close for A and the confirmation close for B. Long entries use Ask and short entries use Bid, plus the declared entry slippage. The engine completes a bar on the first tick after its close through `OnTime`. This produces the same ledgers as the M1-only path; the Phase 3 run's Python reconciliation passed byte for byte.
+3. **Stop, 1R and target.** SL = sweep extreme ∓ (entry spread + `SweepSLExtraPips` × pip), as in 4.2. It is aligned outward to the tick grid; a stop on the wrong side ends the proxy as `INVALID_STOP_GEOMETRY`. `PlannedRisk1R` per lot = OrderCalcProfit loss from entry to SL plus the opening commission (4.5). The TP is solved so that profit(entry → TP) − commission = `SingleTP_R` × `PlannedRisk1R` (4.7), then aligned outward. The TP triggers when Bid ≥ TP for a long or Ask ≤ TP for a short, and the SL follows LIVE_NATIVE_STOP. Exits fill at the executable quote plus the declared exit slippage. If both barriers are crossed on one tick, the stop wins (0C.21). A tick more than 300 s after the previous one marks a `GAP_*` exit (0C.17).
+4. **Swap.** Swap is charged at each broker-day rollover while a proxy is held. It uses the symbol's swap mode (points or currency), and the night is tripled when the rolled-over day is `SYMBOL_SWAP_ROLLOVER3DAYS`. Any other swap mode is flagged `swap_modeled = 0`.
+5. **Hypothesis B.** The confirmation candle is the next SignalTimeframe bar. For a short, its close must be below the sweep low; for a long, above the sweep high. If that bar contains a valid opposite-direction sweep (`SETUP`, `MULTI_POOL_NOT_SELECTED` or `CONFLICTING_SWEEP_SAME_BAR`), the proxy expires with `CONFIRMATION_CONFLICT` (0C.7). A failed confirmation never reopens.
+6. **Excursions and horizons.** MAE and MFE (0C.14) include the entry tick. `DirectionalForwardReturn_H` uses the close of bar k+H after sweep bar k, for H = 1, 3, 5, 10 and 20 (3.7).
+7. **Analysis set and statistics.** The analysis set holds closed proxies whose entry lies inside `StrategyEntryWindow`, outside data quarantine, and not closed by end of data. The one-sided 95% upper bound comes from a day-block bootstrap: broker entry days are resampled with replacement, 10,000 times, with seed 20260929, and the bound is the 95th percentile. The 3.6 minima (100 events and 20 days) must hold for both hypotheses. Otherwise the timeframe is `INCONCLUSIVE`.
+8. **Buckets.** Time buckets use the broker hour of the sweep close: `H00_08`, `H08_13`, `H13_17`, `H17_24`. Entry spread is bucketed in pips: `<1`, `1–2`, `2–3`, `3–5`, `≥5`. The news state is `NO_CALENDAR_OBSERVE_ONLY` because no validated calendar was supplied (3.3).
+
+### Phase 3 completion record
+
+`Phase 3 — COMPLETE (gate classified)`
+
+`Date: 2026-09-29`
+
+`Files changed: added MQL5/Include/LiquiditySweepReversal/{LSR_EventStudy,LSR_Phase3}.mqh, python/lsr_reference/event_study.py, python/tests/test_event_study.py, docs/Phase3_RunCard.md, research/phase3_event_study/; modified MQL5/Include/LiquiditySweepReversal/{LSR_Bars,LSR_Liquidity}.mqh (OnTime bar completion), MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5, MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5, python/tests/test_engine.py, this roadmap (3.8, this record, update log).`
+
+`Summary: Adds the tick-level event-study proxies for hypotheses A and B (LIVE_NATIVE_STOP, net 2R, MAE/MFE, costs, swap, forward returns, buckets) and the Python report, with the day-block bootstrap and the per-timeframe early-stop classification.`
+
+`Compile/Tests: EA and scripts compile with 0 errors and 0 warnings. LSR_Tests: PASS 288/288. Python: 17/17 OK. Rapid-sample run (85,120,384 ticks, DATA-PASSED, no non-default inputs; Phase 2 ledgers reconcile byte-identically, checksum 55824c8cf451bda4fa087f29bed8fa6123706fb63fe0b83d92cd90fe354b0874).`
+
+`Result (EventStudyNetR, one-sided 95% upper bound): M5 A n=3273 mean −0.182 upper −0.143; M5 B n=651 mean −0.093 upper −0.003 → STOP_EARLY_REDESIGN (M5 removed). M15 A n=1090 mean −0.056 upper +0.020; M15 B n=211 mean −0.032 upper +0.132 → CONTINUE. H1 A n=282 mean −0.110 upper +0.016; H1 B n=54 mean +0.359 upper +0.706 → INCONCLUSIVE (B below 100 events). Project: CONTINUE. Reversal share at H = 1–20 is 0.50–0.56 on every timeframe. The mean entry spread is about 5.6–5.8 pips, above the frozen 3.0-pip admission gate, so most raw events would fail the baseline cost gate in Phase 4. The full packet is in research/phase3_event_study/.`
+
+
 # Phase 4 — Entry, Stop, Target, Break-Even & Re-Entry Lifecycle
 
 ## Goal
@@ -2818,6 +2844,10 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-29 — Phase 3 COMPLETE (gate classified)
+
+- Event study on the rapid sample: M5 = STOP_EARLY_REDESIGN (removed from the active research set), M15 = CONTINUE, H1 = INCONCLUSIVE. Project = CONTINUE. Added 3.8 closures. The active research TimeframeSet for Phase 4 is M15 and H1; M5 remains reported only as a removed trial.
 
 ## Update 2026-09-29 — Phase 2 COMPLETE
 

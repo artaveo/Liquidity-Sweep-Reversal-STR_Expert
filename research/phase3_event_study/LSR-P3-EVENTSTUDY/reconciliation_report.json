@@ -1,0 +1,191 @@
+{
+  "contract_id": "LSR-PHASE2-EVENTS-2026-09-29",
+  "package": "C:\\Users\\zakir_ip1m5wj\\AppData\\Roaming\\MetaQuotes\\Terminal\\Common\\Files\\LSR\\LSR-P3-EVENTSTUDY",
+  "m1_bars": 174621,
+  "python_version": "3.12.10",
+  "timeframes": {
+    "M5": {
+      "summary": {
+        "timeframe": "M5",
+        "bars": 34939,
+        "swings": 9416,
+        "levels": 10291,
+        "pools": 10490,
+        "active_pools_at_end": 180,
+        "touches": 53,
+        "event_rows": 8917,
+        "event_status_counts": {
+          "SETUP": 3680,
+          "PARTIAL_POOL_SWEEP": 22,
+          "OPEN_ON_LIQUIDITY": 1,
+          "OPEN_INSIDE_POOL": 1,
+          "OPENED_BEYOND_POOL": 109,
+          "PREV_CLOSE_NOT_OUTSIDE": 1,
+          "NO_RECLAIM": 4449,
+          "NO_PREVIOUS_BAR": 0,
+          "MULTI_POOL_NOT_SELECTED": 612,
+          "CONFLICTING_SWEEP_SAME_BAR": 42
+        },
+        "setups_long": 1919,
+        "setups_short": 1761
+      },
+      "ledgers": {
+        "events": {
+          "mql5_rows": 8917,
+          "python_rows": 8917,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "d6423b7075d4e6685a19588fe319e0819fd3c9af4f0398526d27d479e9ef352a",
+          "python_sha256": "d6423b7075d4e6685a19588fe319e0819fd3c9af4f0398526d27d479e9ef352a"
+        },
+        "levels": {
+          "mql5_rows": 10291,
+          "python_rows": 10291,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "5d6e570d9cc1705247e6b8138de54f563147c06178f806a9108d8225301629e3",
+          "python_sha256": "5d6e570d9cc1705247e6b8138de54f563147c06178f806a9108d8225301629e3"
+        },
+        "pools": {
+          "mql5_rows": 10490,
+          "python_rows": 10490,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "7704e4f11ae7d1f0901ad76753f8413ed63484b0e21169f0760f069f8f58a2bf",
+          "python_sha256": "7704e4f11ae7d1f0901ad76753f8413ed63484b0e21169f0760f069f8f58a2bf"
+        },
+        "touches": {
+          "mql5_rows": 53,
+          "python_rows": 53,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "1dbc7f5e2e61f532c3089620788d7821741b1f7b683a62984d9d527766005476",
+          "python_sha256": "1dbc7f5e2e61f532c3089620788d7821741b1f7b683a62984d9d527766005476"
+        }
+      }
+    },
+    "M15": {
+      "summary": {
+        "timeframe": "M15",
+        "bars": 11651,
+        "swings": 3158,
+        "levels": 3717,
+        "pools": 3911,
+        "active_pools_at_end": 101,
+        "touches": 7,
+        "event_rows": 3054,
+        "event_status_counts": {
+          "SETUP": 1210,
+          "PARTIAL_POOL_SWEEP": 5,
+          "OPEN_ON_LIQUIDITY": 0,
+          "OPEN_INSIDE_POOL": 0,
+          "OPENED_BEYOND_POOL": 57,
+          "PREV_CLOSE_NOT_OUTSIDE": 0,
+          "NO_RECLAIM": 1483,
+          "NO_PREVIOUS_BAR": 0,
+          "MULTI_POOL_NOT_SELECTED": 269,
+          "CONFLICTING_SWEEP_SAME_BAR": 30
+        },
+        "setups_long": 625,
+        "setups_short": 585
+      },
+      "ledgers": {
+        "events": {
+          "mql5_rows": 3054,
+          "python_rows": 3054,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "37aef95546182f04225e567aad4b3feebed6275c3bd3dca0a41c62c48714ba31",
+          "python_sha256": "37aef95546182f04225e567aad4b3feebed6275c3bd3dca0a41c62c48714ba31"
+        },
+        "levels": {
+          "mql5_rows": 3717,
+          "python_rows": 3717,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "289fc7c61d8fd06bc0317c7353a6e86ac7b15ddc98ec08baecbdb8ed9bb983b7",
+          "python_sha256": "289fc7c61d8fd06bc0317c7353a6e86ac7b15ddc98ec08baecbdb8ed9bb983b7"
+        },
+        "pools": {
+          "mql5_rows": 3911,
+          "python_rows": 3911,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "871a1c3753a5252c684f13ae38516e12ae2335a4ee9fb016b87d5e26e1881beb",
+          "python_sha256": "871a1c3753a5252c684f13ae38516e12ae2335a4ee9fb016b87d5e26e1881beb"
+        },
+        "touches": {
+          "mql5_rows": 7,
+          "python_rows": 7,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "74180fe0b25c396f53c81b7431f2963973c555e29ef308948d192311701641ce",
+          "python_sha256": "74180fe0b25c396f53c81b7431f2963973c555e29ef308948d192311701641ce"
+        }
+      }
+    },
+    "H1": {
+      "summary": {
+        "timeframe": "H1",
+        "bars": 2914,
+        "swings": 783,
+        "levels": 1295,
+        "pools": 1465,
+        "active_pools_at_end": 51,
+        "touches": 0,
+        "event_rows": 821,
+        "event_status_counts": {
+          "SETUP": 316,
+          "PARTIAL_POOL_SWEEP": 0,
+          "OPEN_ON_LIQUIDITY": 0,
+          "OPEN_INSIDE_POOL": 0,
+          "OPENED_BEYOND_POOL": 35,
+          "PREV_CLOSE_NOT_OUTSIDE": 0,
+          "NO_RECLAIM": 375,
+          "NO_PREVIOUS_BAR": 0,
+          "MULTI_POOL_NOT_SELECTED": 87,
+          "CONFLICTING_SWEEP_SAME_BAR": 8
+        },
+        "setups_long": 173,
+        "setups_short": 143
+      },
+      "ledgers": {
+        "events": {
+          "mql5_rows": 821,
+          "python_rows": 821,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "8afe09dbf6f744e41f7ba5384c15056f1514f2759080ed96cccbd98c44268c8f",
+          "python_sha256": "8afe09dbf6f744e41f7ba5384c15056f1514f2759080ed96cccbd98c44268c8f"
+        },
+        "levels": {
+          "mql5_rows": 1295,
+          "python_rows": 1295,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "ed1a82c965de764353a5956e88d87cbce1ee7c7c9ef287f874cfcaaeadc5a841",
+          "python_sha256": "ed1a82c965de764353a5956e88d87cbce1ee7c7c9ef287f874cfcaaeadc5a841"
+        },
+        "pools": {
+          "mql5_rows": 1465,
+          "python_rows": 1465,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "5b806c61c670df9171cbdcf705fbde17dd33994ee4b03b0f4766ba0ad1a94241",
+          "python_sha256": "5b806c61c670df9171cbdcf705fbde17dd33994ee4b03b0f4766ba0ad1a94241"
+        },
+        "touches": {
+          "mql5_rows": 0,
+          "python_rows": 0,
+          "identical": true,
+          "first_mismatches": [],
+          "mql5_sha256": "dbe4b9d676e6f042b97a03e4477161ec2b436b64e8b09f87346d0015cf56c74b",
+          "python_sha256": "dbe4b9d676e6f042b97a03e4477161ec2b436b64e8b09f87346d0015cf56c74b"
+        }
+      }
+    }
+  },
+  "result": "PASS",
+  "python_ledger_checksum": "55824c8cf451bda4fa087f29bed8fa6123706fb63fe0b83d92cd90fe354b0874",
+  "elapsed_seconds": 15.2
+}
