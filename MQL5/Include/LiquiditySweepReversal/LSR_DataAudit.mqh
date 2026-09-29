@@ -524,6 +524,15 @@ public:
       return LSR_DATA_PASSED;
      }
 
+   bool              Overlaps(const datetime from, const datetime toExclusive) const
+     {
+      int n = ArraySize(m_qFrom);
+      for(int i = 0; i < n; i++)
+         if(m_qFrom[i] < toExclusive && from < m_qTo[i])
+            return true;
+      return false;
+     }
+
    //--- Quarantine lookup for later phases (no new entries inside).
    bool              IsQuarantined(const datetime t) const
      {
@@ -697,6 +706,15 @@ public:
 
    int               Count(void) const  { return ArraySize(m_from); }
    string            Source(void) const { return m_source; }
+
+   bool              Overlaps(const datetime from, const datetime toExclusive) const
+     {
+      int n = ArraySize(m_from);
+      for(int i = 0; i < n; i++)
+         if(m_from[i] < toExclusive && from < m_to[i])
+            return true;
+      return false;
+     }
 
    bool              IsQuarantined(const datetime t) const
      {

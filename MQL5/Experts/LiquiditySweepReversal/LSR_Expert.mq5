@@ -9,14 +9,14 @@
 //| Common\Files\LSR\<ExperimentId>\.                                |
 //+------------------------------------------------------------------+
 #property copyright   "Liquidity Sweep Reversal"
-#property version     "1.00"
-#property description "Phase 1 — Data, Time, Symbol & Execution Contract (no trading)"
+#property version     "2.00"
+#property description "Phases 1–2 — contract, data audit and liquidity sweep events (no trading)"
 
-#include "../../Include/LiquiditySweepReversal/LSR_Phase1.mqh"
+#include "../../Include/LiquiditySweepReversal/LSR_Phase2.mqh"
 
 //--- Run identity (DataManifest, roadmap 0A.6)
 input group "Run identity (DataManifest)"
-input string                        InpExperimentId               = "LSR-P1-SMOKE";   // ExperimentId
+input string                        InpExperimentId               = "LSR-P2-SMOKE";   // ExperimentId
 input string                        InpCodeCommitSHA              = "";               // CodeCommitSHA (git rev-parse HEAD)
 input string                        InpRoadmapSHA256              = "";               // RoadmapSHA256 (sha256 of the roadmap file)
 
@@ -94,6 +94,23 @@ input double                        InpAccountInitialBalance      = 100000.0;   
 input string                        InpAccountCurrency            = "USD";            // AccountCurrency
 input double                        InpAccountRuleSafetyBufferR   = 0.10;             // AccountRuleSafetyBufferR
 
+//--- Phase 2 liquidity model and sweep events
+input group "2 Liquidity model and sweep events"
+input bool                          InpUsePreviousDayHighLow      = true;             // PreviousDayHighLow
+input bool                          InpUsePreviousSessionHighLow  = true;             // PreviousSessionHighLow
+input bool                          InpUseConfirmedSwingHighLow   = true;             // ConfirmedSwingHighLow
+input bool                          InpUseEqualHighsLows          = true;             // EqualHighsLows
+input string                        InpLiquiditySessionStart      = "16:30";          // LiquiditySessionStart (broker time)
+input string                        InpLiquiditySessionEnd        = "21:30";          // LiquiditySessionEnd (broker time, exclusive)
+input int                           InpSwingLeftBars              = 2;                // SwingLeftBars
+input int                           InpSwingRightBars             = 2;                // SwingRightBars
+input double                        InpEqualLevelTolerancePips    = 3.0;              // EqualLevelTolerancePips
+input ENUM_LSR_EQUAL_TOL_MODE       InpEqualLevelToleranceMode    = LSR_EQTOL_FIXED_PIPS; // EqualLevelToleranceMode
+input double                        InpLiquidityClusteringTolerancePips = 3.0;        // LiquidityClusteringTolerancePips
+input ENUM_LSR_MULTI_POOL_POLICY    InpMultiPoolSweepPolicy       = LSR_MULTIPOOL_FIRST_CROSSED_LEVEL; // MultiPoolSweepPolicy
+input ENUM_LSR_ENTRY_MODE           InpEntryMode                  = LSR_ENTRY_RECLAIM_CLOSE; // EntryMode (recorded as confirmation mode)
+input bool                          InpExportReferenceBars        = true;             // ExportReferenceBars (M1 CSV for the Python reference)
+
 //+------------------------------------------------------------------+
 //| One isolated research state per selected timeframe (rule 11).    |
 //+------------------------------------------------------------------+
@@ -102,6 +119,7 @@ class CLSR_TimeframeContext
 public:
    ENUM_LSR_TIMEFRAME tf;
    CLSR_BarReconciler bars;
+   CLSR_EventEngine  events;
    CLSR_DailyRiskState daily;
    CLSR_AccountRuleEngine acct;
    double            equity;
@@ -110,10 +128,13 @@ public:
    long              ticks_in_entry_window;
    ENUM_LSR_ACCOUNT_RULE_STATE last_account_state;
 
-   void              Init(const ENUM_LSR_TIMEFRAME t, const string symbol, const ENUM_LSR_PRICE_SOURCE src,
-                          const double point, const LSR_AccountRuleProfile &profile, const double startEquity)
+   bool              Init(const ENUM_LSR_TIMEFRAME t, const string symbol, const ENUM_LSR_PRICE_SOURCE src,
+                          const double point, const LSR_AccountRuleProfile &profile, const double startEquity,
+                          const LSR_EventConfig &evCfg, string &error)
      {
       tf = t;
+      if(!events.Init(t, evCfg, error))
+         return false;
       bars.Init(symbol, t, src, point);
       acct.Init(profile);
       equity = startEquity;
@@ -121,6 +142,21 @@ public:
       ticks = 0;
       ticks_in_entry_window = 0;
       last_account_state = LSR_ACCOUNT_OK;
+      return true;
+     }
+  };
+
+//--- Quarantine lookup used when writing event ledgers.
+class CLSR_EAQuarantine : public CLSR_QuarantineCheck
+  {
+public:
+   CLSR_RawTickAudit *raw;
+   CLSR_DataQuarantine *file;
+   virtual bool      Overlaps(const datetime from, const datetime toExclusive)
+     {
+      if(raw != NULL && raw.Overlaps(from, toExclusive))
+         return true;
+      return file != NULL && file.Overlaps(from, toExclusive);
      }
   };
 
@@ -145,6 +181,11 @@ CLSR_RawTickAudit      g_rawAudit;
 CLSR_RawAuditDriver    g_rawDriver;
 CLSR_TimeframeContext *g_ctx[LSR_TF_COUNT];
 int                    g_ctxCount = 0;
+LSR_EventConfig        g_evCfg;
+CLSR_M1Builder         g_m1;
+int                    g_m1File = INVALID_HANDLE;
+long                   g_m1Count = 0;
+datetime               g_firstM1 = 0;
 
 LSR_TickAnomalies      g_stream;
 bool                   g_havePrev = false;
@@ -162,7 +203,7 @@ string                 g_initTime = "";
 //+------------------------------------------------------------------+
 void RecordInputs(void)
   {
-   g_inputs.Add("ExperimentId", InpExperimentId, "LSR-P1-SMOKE");
+   g_inputs.Add("ExperimentId", InpExperimentId, "LSR-P2-SMOKE");
    g_inputs.Add("CodeCommitSHA", InpCodeCommitSHA, "");
    g_inputs.Add("RoadmapSHA256", InpRoadmapSHA256, "");
    g_inputs.Add("TimeframeSet", InpTimeframeSet, LSR_DEFAULT_TIMEFRAME_SET);
@@ -212,6 +253,20 @@ void RecordInputs(void)
    g_inputs.AddNum("AccountInitialBalance", InpAccountInitialBalance, 100000.0);
    g_inputs.Add("AccountCurrency", InpAccountCurrency, "USD");
    g_inputs.AddNum("AccountRuleSafetyBufferR", InpAccountRuleSafetyBufferR, 0.10);
+   g_inputs.AddBool("PreviousDayHighLow", InpUsePreviousDayHighLow, true);
+   g_inputs.AddBool("PreviousSessionHighLow", InpUsePreviousSessionHighLow, true);
+   g_inputs.AddBool("ConfirmedSwingHighLow", InpUseConfirmedSwingHighLow, true);
+   g_inputs.AddBool("EqualHighsLows", InpUseEqualHighsLows, true);
+   g_inputs.Add("LiquiditySessionStart", InpLiquiditySessionStart, "16:30");
+   g_inputs.Add("LiquiditySessionEnd", InpLiquiditySessionEnd, "21:30");
+   g_inputs.AddInt("SwingLeftBars", InpSwingLeftBars, 2);
+   g_inputs.AddInt("SwingRightBars", InpSwingRightBars, 2);
+   g_inputs.AddNum("EqualLevelTolerancePips", InpEqualLevelTolerancePips, 3.0);
+   g_inputs.Add("EqualLevelToleranceMode", LSR_EqualTolModeName(InpEqualLevelToleranceMode), "FIXED_PIPS");
+   g_inputs.AddNum("LiquidityClusteringTolerancePips", InpLiquidityClusteringTolerancePips, 3.0);
+   g_inputs.Add("MultiPoolSweepPolicy", LSR_MultiPoolPolicyName(InpMultiPoolSweepPolicy), "FIRST_CROSSED_LEVEL");
+   g_inputs.Add("EntryMode", LSR_EntryModeName(InpEntryMode), "RECLAIM_CLOSE");
+   g_inputs.AddBool("ExportReferenceBars", InpExportReferenceBars, true);
   }
 
 //+------------------------------------------------------------------+
@@ -321,14 +376,49 @@ int OnInit(void)
                    g_rangeStart, g_rangeEndExclusive, "TESTER_CopyTicksRange_COPY_TICKS_ALL");
    g_rawDriver.Init(_Symbol, GetPointer(g_rawAudit));
 
+   //--- Phase 2 event-layer configuration
+   LSR_EventConfigDefaults(g_evCfg);
+   g_evCfg.use_previous_day     = InpUsePreviousDayHighLow;
+   g_evCfg.use_previous_session = InpUsePreviousSessionHighLow;
+   g_evCfg.use_swings           = InpUseConfirmedSwingHighLow;
+   g_evCfg.use_equal            = InpUseEqualHighsLows;
+   if(!LSR_ParseHHMM(InpLiquiditySessionStart, false, g_evCfg.session_start_sec, err))
+      return Fail("LiquiditySessionStart: " + err);
+   if(!LSR_ParseHHMM(InpLiquiditySessionEnd, true, g_evCfg.session_end_sec, err))
+      return Fail("LiquiditySessionEnd: " + err);
+   g_evCfg.swing_left           = InpSwingLeftBars;
+   g_evCfg.swing_right          = InpSwingRightBars;
+   g_evCfg.equal_tol_pips       = InpEqualLevelTolerancePips;
+   g_evCfg.equal_tol_mode       = InpEqualLevelToleranceMode;
+   g_evCfg.cluster_tol_pips     = InpLiquidityClusteringTolerancePips;
+   g_evCfg.multi_pool_policy    = InpMultiPoolSweepPolicy;
+   g_evCfg.entry_mode           = InpEntryMode;
+   g_evCfg.pip_size             = InpStrategyPipSize;
+   g_evCfg.point                = g_spec.point;
+   g_evCfg.digits               = g_spec.digits;
+   if(!LSR_ValidateEventConfig(g_evCfg, err))
+      return Fail(err);
+
    //--- Isolated contexts
    double startEquity = (g_runContext == LSR_CONTEXT_RESEARCH ? InpAccountInitialBalance : AccountInfoDouble(ACCOUNT_EQUITY));
    g_ctxCount = 0;
    for(int i = 0; i < g_active.count; i++)
      {
       g_ctx[i] = new CLSR_TimeframeContext;
-      g_ctx[i].Init(g_active.items[i], _Symbol, InpSignalBarPriceSource, g_spec.point, g_acctProfile, startEquity);
       g_ctxCount++;
+      if(!g_ctx[i].Init(g_active.items[i], _Symbol, InpSignalBarPriceSource, g_spec.point, g_acctProfile, startEquity, g_evCfg, err))
+         return Fail(err);
+     }
+   g_m1.Init(InpSignalBarPriceSource, g_spec.digits);
+   g_m1Count = 0;
+   g_firstM1 = 0;
+   g_m1File = INVALID_HANDLE;
+   if(InpExportReferenceBars && g_runContext == LSR_CONTEXT_RESEARCH)
+     {
+      g_m1File = FileOpen(g_out.Dir() + "bars_M1_" + LSR_PriceSourceName(InpSignalBarPriceSource) + ".csv", FILE_WRITE | FILE_BIN | FILE_COMMON);
+      if(g_m1File == INVALID_HANDLE)
+         return Fail("cannot open the M1 reference-bar export file");
+      CLSR_EventEngine::WriteLine(g_m1File, "time,open,high,low,close,ticks");
      }
 
    LSR_TickAnomaliesReset(g_stream);
@@ -338,10 +428,24 @@ int OnInit(void)
    g_initialized = true;
 
    WriteContractSnapshots();
-   PrintFormat("LSR Phase 1 initialised: context=%s TimeframeSet=%s active=%s session=%s output=Common\\Files\\%s",
+   PrintFormat("LSR Phase 2 initialised: context=%s TimeframeSet=%s active=%s session=%s output=Common\\Files\\%s",
                LSR_RunContextName(g_runContext), LSR_TimeframeSetToString(g_tfSet), LSR_TimeframeSetToString(g_active),
                LSR_SessionModeName(InpTradingSessionMode), g_out.Dir());
    return INIT_SUCCEEDED;
+  }
+
+//+------------------------------------------------------------------+
+void OnCompletedM1(const LSR_Bar &m1)
+  {
+   if(g_m1Count == 0)
+      g_firstM1 = m1.time;
+   g_m1Count++;
+   if(g_m1File != INVALID_HANDLE)
+      CLSR_EventEngine::WriteLine(g_m1File, LSR_IsoTime(m1.time) + "," + DoubleToString(m1.open, g_spec.digits) + "," +
+                                  DoubleToString(m1.high, g_spec.digits) + "," + DoubleToString(m1.low, g_spec.digits) + "," +
+                                  DoubleToString(m1.close, g_spec.digits) + "," + IntegerToString(m1.ticks));
+   for(int i = 0; i < g_ctxCount; i++)
+      g_ctx[i].events.OnM1(m1);
   }
 
 //+------------------------------------------------------------------+
@@ -373,6 +477,11 @@ void OnTick(void)
       g_ticksInSession++;
    if(entryAllowed)
       g_ticksInEntryWindow++;
+
+   //--- Phase 2: one M1 stream feeds every isolated timeframe engine (2.10A)
+   LSR_Bar m1;
+   if(usable && g_m1.OnQuote(q, m1))
+      OnCompletedM1(m1);
 
    for(int i = 0; i < g_ctxCount; i++)
      {
@@ -496,10 +605,100 @@ void WriteContractSnapshots(void)
   }
 
 //+------------------------------------------------------------------+
+//| Phase 2: flush bars, write per-timeframe ledgers, reference       |
+//| config and the event summary. Returns the combined ledger hash.   |
+//+------------------------------------------------------------------+
+string g_eventsSha[LSR_TF_COUNT];
+
+string FinalizeEvents(void)
+  {
+   LSR_Bar m1;
+   if(g_m1.Flush(m1))
+      OnCompletedM1(m1);
+   for(int i = 0; i < g_ctxCount; i++)
+      g_ctx[i].events.Flush();
+   if(g_m1File != INVALID_HANDLE)
+     {
+      FileClose(g_m1File);
+      g_m1File = INVALID_HANDLE;
+      g_out.RegisterFile("bars_M1_" + LSR_PriceSourceName(InpSignalBarPriceSource) + ".csv");
+     }
+
+   CLSR_EAQuarantine q;
+   q.raw = (g_runContext == LSR_CONTEXT_RESEARCH ? GetPointer(g_rawAudit) : NULL);
+   q.file = GetPointer(g_quarantine);
+   string combined = "";
+   for(int i = 0; i < g_ctxCount; i++)
+     {
+      string tf = LSR_TimeframeName(g_ctx[i].tf);
+      if(!g_ctx[i].events.WriteLedgers(g_out.Dir(), q))
+         PrintFormat("LSR: cannot write %s ledgers", tf);
+      g_eventsSha[i] = g_out.RegisterFile("events_" + tf + ".csv");
+      g_out.RegisterFile("levels_" + tf + ".csv");
+      g_out.RegisterFile("pools_" + tf + ".csv");
+      g_out.RegisterFile("touches_" + tf + ".csv");
+      combined += tf + ":" + g_eventsSha[i] + ";";
+     }
+
+   //--- configuration consumed by the independent Python reference
+   CLSR_Json j;
+   j.BeginObject();
+   j.KStr("contract_id", LSR_PHASE2_CONTRACT_ID);
+   j.KStr("symbol", _Symbol);
+   j.KInt("digits", g_spec.digits);
+   j.KNum("point", g_spec.point, 12);
+   j.KNum("strategy_pip_size", InpStrategyPipSize, 8);
+   j.KStr("signal_bar_price_source", LSR_PriceSourceName(InpSignalBarPriceSource));
+   j.KStr("m1_bars_file", "bars_M1_" + LSR_PriceSourceName(InpSignalBarPriceSource) + ".csv");
+   j.KArr("timeframes");
+   for(int i = 0; i < g_ctxCount; i++)
+      j.Str(LSR_TimeframeName(g_ctx[i].tf));
+   j.EndArray();
+   j.KBool("use_previous_day", g_evCfg.use_previous_day);
+   j.KBool("use_previous_session", g_evCfg.use_previous_session);
+   j.KBool("use_swings", g_evCfg.use_swings);
+   j.KBool("use_equal", g_evCfg.use_equal);
+   j.KInt("session_start_sec", g_evCfg.session_start_sec);
+   j.KInt("session_end_sec", g_evCfg.session_end_sec);
+   j.KInt("swing_left", g_evCfg.swing_left);
+   j.KInt("swing_right", g_evCfg.swing_right);
+   j.KNum("equal_tol_pips", g_evCfg.equal_tol_pips, 8);
+   j.KNum("cluster_tol_pips", g_evCfg.cluster_tol_pips, 8);
+   j.KStr("multi_pool_policy", LSR_MultiPoolPolicyName(g_evCfg.multi_pool_policy));
+   j.KStr("entry_mode", LSR_EntryModeName(g_evCfg.entry_mode));
+   j.KInt("atr_period", LSR_ATR_PERIOD);
+   j.KStr("quarantine_file", g_runContext == LSR_CONTEXT_RESEARCH ? "data_quarantine_windows.csv" : "");
+   j.KStr("declared_quarantine_file", InpDataQuarantineFile);
+   j.EndObject();
+   g_out.Write("reference_config.json", j.Text());
+
+   //--- event summary
+   j.Reset();
+   j.BeginObject();
+   j.KStr("contract_id", LSR_PHASE2_CONTRACT_ID);
+   j.KInt("m1_bars", g_m1Count);
+   j.KStr("first_m1_bar", g_m1Count > 0 ? LSR_IsoTime(g_firstM1) : "");
+   j.KArr("timeframes");
+   for(int i = 0; i < g_ctxCount; i++)
+     {
+      g_ctx[i].events.WriteSummaryJson(j);
+     }
+   j.EndArray();
+   j.KObj("events_sha256");
+   for(int i = 0; i < g_ctxCount; i++)
+      j.KStr(LSR_TimeframeName(g_ctx[i].tf), g_eventsSha[i]);
+   j.EndObject();
+   j.EndObject();
+   g_out.Write("event_summary.json", j.Text());
+   return LSR_Sha256Hex(combined);
+  }
+
+//+------------------------------------------------------------------+
 void WriteFinalPackage(const int deinitReason)
   {
    if(g_runContext == LSR_CONTEXT_RESEARCH && g_havePrev)
       g_rawDriver.Flush((datetime)(g_stream.last_msc / 1000));
+   string ledgerChecksum = FinalizeEvents();
 
    //--- data-quality report
    CLSR_Json j;
@@ -560,7 +759,7 @@ void WriteFinalPackage(const int deinitReason)
    j.BeginObject();
    j.KStr("schema_version", LSR_MANIFEST_SCHEMA_VERSION);
    j.KStr("engine", LSR_ENGINE_NAME);
-   j.KStr("phase", "PHASE_1_DATA_TIME_SYMBOL_EXECUTION_CONTRACT");
+   j.KStr("phase", "PHASE_2_LIQUIDITY_MODEL_SWEEP_EVENTS");
    j.KStr("contract_id", LSR_PHASE1_CONTRACT_ID);
    j.KStr("experiment_id", InpExperimentId);
    j.KStr("run_context", LSR_RunContextName(g_runContext));
@@ -628,8 +827,12 @@ void WriteFinalPackage(const int deinitReason)
    j.KInt("declared_trial_count", g_active.count);
    j.KArr("random_seeds");
    j.EndArray();
-   j.KNull("ledger_checksum");
-   j.KStr("ledger_note", "Phase 1 produces no event/trade ledger; ledgers start in Phase 2");
+   j.KStr("ledger_checksum", ledgerChecksum);
+   j.KStr("ledger_note", "sha256 over '<TF>:<sha256(events_<TF>.csv)>;' for every active timeframe in canonical order; no trade ledger before Phase 4");
+   j.KObj("event_ledgers_sha256");
+   for(int i = 0; i < g_ctxCount; i++)
+      j.KStr(LSR_TimeframeName(g_ctx[i].tf), g_eventsSha[i]);
+   j.EndObject();
    j.KArr("per_timeframe_state");
    for(int i = 0; i < g_ctxCount; i++)
      {

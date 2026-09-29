@@ -135,6 +135,40 @@ public:
       return sha;
      }
 
+   //--- Indexes a file written directly (e.g. streamed ledgers) by hashing it from disk.
+   string            RegisterFile(const string fileName)
+     {
+      string sha = "";
+      int h = FileOpen(m_dir + fileName, FILE_READ | FILE_BIN | FILE_COMMON);
+      if(h != INVALID_HANDLE)
+        {
+         uchar data[], key[], hash[];
+         ulong size = FileSize(h);
+         if(size > 0)
+            FileReadArray(h, data, 0, (int)size);
+         FileClose(h);
+         if(CryptEncode(CRYPT_HASH_SHA256, data, key, hash) > 0)
+            sha = LSR_HexLower(hash);
+        }
+      if(sha == "")
+        {
+         m_failures++;
+         return "";
+        }
+      for(int i = 0; i < ArraySize(m_files); i++)
+         if(m_files[i] == fileName)
+           {
+            m_sha[i] = sha;
+            return sha;
+           }
+      int n = ArraySize(m_files);
+      ArrayResize(m_files, n + 1);
+      ArrayResize(m_sha, n + 1);
+      m_files[n] = fileName;
+      m_sha[n] = sha;
+      return sha;
+     }
+
    void              WriteIndexJson(CLSR_Json &j) const
      {
       j.BeginArray();

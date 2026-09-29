@@ -9,7 +9,7 @@
 #property description "Phase 1 blocking tests (no trading)"
 #property script_show_inputs
 
-#include "../../Include/LiquiditySweepReversal/LSR_Phase1.mqh"
+#include "../../Include/LiquiditySweepReversal/LSR_Phase2.mqh"
 
 input bool InpCloseTerminalWhenDone = false; // Close terminal after the run (CI use)
 
@@ -827,11 +827,335 @@ void TestManifest(void)
   }
 
 //+------------------------------------------------------------------+
+//| Phase 2 event fixtures — identical to python/tests/test_engine.py|
+//+------------------------------------------------------------------+
+datetime P2_BASE = D'2026.01.05 10:00';
+
+void P2Bar(LSR_Bar &b, const datetime t, const double o, const double h, const double l, const double c)
+  {
+   b.time = t;
+   b.period = 60;
+   b.open = o;
+   b.high = h;
+   b.low = l;
+   b.close = c;
+   b.ticks = 1;
+  }
+
+void P2Feed(CLSR_EventEngine &e, const int i, const double o, const double h, const double l, const double c)
+  {
+   LSR_Bar b;
+   P2Bar(b, P2_BASE + i * 60, o, h, l, c);
+   e.OnM1(b);
+  }
+
+void P2FeedAt(CLSR_EventEngine &e, const datetime t, const double o, const double h, const double l, const double c)
+  {
+   LSR_Bar b;
+   P2Bar(b, t, o, h, l, c);
+   e.OnM1(b);
+  }
+
+void P2Cfg(LSR_EventConfig &c, const bool pd, const bool ps, const bool sw, const bool eq)
+  {
+   LSR_EventConfigDefaults(c);
+   c.use_previous_day = pd;
+   c.use_previous_session = ps;
+   c.use_swings = sw;
+   c.use_equal = eq;
+  }
+
+double P2_SWING[7][4] =
+  {
+     {2000.00, 2000.50, 1999.80, 2000.20},
+     {2000.20, 2001.00, 2000.10, 2000.80},
+     {2000.80, 2002.00, 2000.60, 2001.50},
+     {2001.50, 2001.70, 2000.90, 2001.00},
+     {2001.00, 2001.20, 2000.40, 2000.60},
+     {2000.60, 2001.40, 2000.30, 2001.20},
+     {2001.20, 2001.95, 2001.10, 2001.80}
+  };
+
+void P2SwingEngine(CLSR_EventEngine &e, const int nSwingBars, const double &extra[][4], const int nExtra)
+  {
+   LSR_EventConfig c;
+   P2Cfg(c, false, false, true, false);
+   string err;
+   e.Init(LSR_TF_M1, c, err);
+   for(int i = 0; i < nSwingBars; i++)
+      P2Feed(e, i, P2_SWING[i][0], P2_SWING[i][1], P2_SWING[i][2], P2_SWING[i][3]);
+   for(int i = 0; i < nExtra; i++)
+      P2Feed(e, nSwingBars + i, extra[i][0], extra[i][1], extra[i][2], extra[i][3]);
+   e.Flush();
+  }
+
+string P2Statuses(const CLSR_EventEngine &e)
+  {
+   string s = "";
+   for(int i = 0; i < e.EventCount(); i++)
+      s += (i > 0 ? "," : "") + e.EventStatus(i);
+   return s;
+  }
+
+void TestPhase2Bars(void)
+  {
+   Suite("2.10A Bars / ATR");
+   CLSR_TfAggregator agg;
+   agg.Init(300);
+   LSR_Bar out[];
+   for(int i = 0; i < 10; i++)
+     {
+      LSR_Bar m, d;
+      P2Bar(m, P2_BASE + i * 60, 2000 + i, 2000.5 + i, 1999.5 + i, 2000.2 + i);
+      if(agg.OnM1(m, d))
+        {
+         int n = ArraySize(out);
+         ArrayResize(out, n + 1);
+         out[n] = d;
+        }
+     }
+   LSR_Bar last;
+   if(agg.Flush(last))
+     {
+      int n = ArraySize(out);
+      ArrayResize(out, n + 1);
+      out[n] = last;
+     }
+   Check(ArraySize(out) == 2, "10 M1 bars -> 2 M5 bars");
+   Check(out[0].time == P2_BASE && out[0].open == 2000 && out[0].high == 2004.5 && out[0].low == 1999.5 && out[0].close == 2004.2, "M5 OHLC aggregation");
+   Check(out[1].time == P2_BASE + 300, "second M5 bar time");
+
+   CLSR_WilderAtr atr;
+   atr.Init(3);
+   double bars[4][4] = {{10, 12, 9, 11}, {11, 13, 10, 12}, {12, 15, 11, 14}, {14, 14.5, 12, 13}};
+   for(int i = 0; i < 4; i++)
+     {
+      LSR_Bar b;
+      P2Bar(b, i * 60, bars[i][0], bars[i][1], bars[i][2], bars[i][3]);
+      atr.Update(b);
+      if(i == 1)
+         Check(!atr.Ready(), "ATR not ready before n bars");
+     }
+   CheckNear(atr.Value(), ((10.0 / 3) * 2 + 2.5) / 3, 1e-12, "Wilder ATR recursion");
+   CheckStr(LSR_StableId("abc"), "ba7816bf8f01cfea", "stable id = sha256 prefix");
+  }
+
+void TestPhase2Sweeps(void)
+  {
+   Suite("2 Events: sweeps");
+   //--- fixture A: valid sweep of a confirmed swing high
+   CLSR_EventEngine a;
+   double ex[3][4] = {{2001.80, 2002.00, 2001.60, 2001.70}, {2001.70, 2002.60, 2001.50, 2001.60}, {2001.60, 2002.70, 2001.40, 2002.65}};
+   P2SwingEngine(a, 7, ex, 3);
+   Check(a.EventCount() == 1 && a.EventStatus(0) == "SETUP", "one SETUP row");
+   int pa = a.EventPoolIndex(0);
+   Check(a.EventSide(0) == 1 && a.EventTouches(0) == 1, "high side, one pre-sweep touch");
+   CheckNear(a.EventPenetration(0), 0.60, 1e-9, "penetration = High - PoolUpper");
+   CheckNear(a.EventReclaim(0), 0.40, 1e-9, "reclaim = PoolLower - Close");
+   CheckStr(a.PoolEndReason(pa), "SWEPT", "pool consumed as SWEPT");
+   Check(a.PoolArm(pa) == P2_BASE + 5 * 60, "swing effective at open of the bar after confirmation");
+   CheckStr(a.EventId(0), "fe6198d644d45855", "EventID equals the Python reference");
+   CheckStr(a.LevelId(0), "64a5fad6d55b0573", "LevelID equals the Python reference");
+
+   //--- rejections
+   string names[3] = {"OPEN_ON_LIQUIDITY", "NO_RECLAIM", "OPENED_BEYOND_POOL"};
+   double rej[3][4] = {{2002.00, 2002.50, 2001.80, 2001.90}, {2001.80, 2002.50, 2001.70, 2002.10}, {2002.30, 2002.50, 2002.10, 2002.20}};
+   for(int r = 0; r < 3; r++)
+     {
+      CLSR_EventEngine e;
+      double x[2][4];
+      for(int k = 0; k < 4; k++)
+         x[0][k] = rej[r][k];
+      x[1][0] = 2001.0;
+      x[1][1] = 2001.1;
+      x[1][2] = 2000.9;
+      x[1][3] = 2001.0;
+      P2SwingEngine(e, 7, x, 2);
+      CheckStr(P2Statuses(e), names[r], "rejection " + names[r]);
+      Check(StringFind(e.PoolEndReason(e.EventPoolIndex(0)), "BREACHED_") == 0, "breach consumes pool: " + names[r]);
+     }
+   CLSR_EventEngine pc;
+   double pcx[2][4] = {{2001.20, 2002.00, 2001.10, 2002.00}, {2001.90, 2002.40, 2001.80, 2001.90}};
+   P2SwingEngine(pc, 6, pcx, 2);
+   CheckStr(P2Statuses(pc), "PREV_CLOSE_NOT_OUTSIDE", "previous close on the level is rejected");
+
+   //--- multi-pool policies
+   for(int pol = 0; pol < 2; pol++)
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      c.multi_pool_policy = (pol == 0 ? LSR_MULTIPOOL_FIRST_CROSSED_LEVEL : LSR_MULTIPOOL_DEEPEST_PENETRATION_LEVEL);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.00, 2001.00, "fx-a");
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.50, 2001.50, "fx-b");
+      P2Feed(e, 0, 2000.00, 2000.20, 1999.90, 2000.10);
+      P2Feed(e, 1, 2000.10, 2001.80, 2000.00, 2000.50);
+      e.Flush();
+      CheckStr(P2Statuses(e), pol == 0 ? "SETUP,MULTI_POOL_NOT_SELECTED" : "MULTI_POOL_NOT_SELECTED,SETUP",
+               pol == 0 ? "FIRST_CROSSED_LEVEL selects the nearest pool" : "DEEPEST_PENETRATION_LEVEL selects the farthest pool");
+      Check(e.ActiveHighCount() == 0, "every crossed pool is consumed");
+     }
+   //--- opposite-direction conflict
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.00, 2001.00, "fx-a");
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.50, 2001.50, "fx-b");
+      e.InjectLevel(LSR_LV_PDL, 1999.00, 1999.00, "fx-c");
+      P2Feed(e, 0, 2000.00, 2000.20, 1999.90, 2000.10);
+      P2Feed(e, 1, 2000.10, 2001.20, 1998.50, 2000.00);
+      e.Flush();
+      CheckStr(P2Statuses(e), "CONFLICTING_SWEEP_SAME_BAR,CONFLICTING_SWEEP_SAME_BAR", "same-bar opposite sweeps: no trade");
+      Check(e.ActiveHighCount() == 1, "unreached pool stays armed");
+     }
+   //--- partial pool penetration, then sweep
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      e.InjectLevel(LSR_LV_EQUAL_HIGHS, 2001.00, 2001.20, "fx-band");
+      P2Feed(e, 0, 2000.00, 2000.20, 1999.90, 2000.10);
+      P2Feed(e, 1, 2000.10, 2001.10, 2000.00, 2000.50);
+      P2Feed(e, 2, 2000.50, 2001.40, 2000.40, 2000.60);
+      e.Flush();
+      CheckStr(P2Statuses(e), "PARTIAL_POOL_SWEEP,SETUP", "partial penetration recorded, not traded");
+      Check(e.EventTouches(1) == 1, "partial bar counts as a pre-sweep touch");
+     }
+   //--- clustering, supersession, inherited touches
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      e.InjectLevel(LSR_LV_PDH, 2001.00, 2001.00, "fx-pdh");
+      P2Feed(e, 0, 2000.00, 2000.20, 1999.90, 2000.10);
+      P2Feed(e, 1, 2000.50, 2001.00, 2000.40, 2000.60);
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.20, 2001.20, "fx-sw1");
+      P2Feed(e, 2, 2000.60, 2000.80, 2000.50, 2000.60);
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.40, 2001.40, "fx-sw2");
+      P2Feed(e, 3, 2000.60, 2001.30, 2000.50, 2000.70);
+      P2Feed(e, 4, 2000.70, 2000.90, 2000.60, 2000.80);
+      e.Flush();
+      Check(e.PoolCount() == 3, "3 pool instances");
+      CheckStr(e.PoolEndReason(0), "SUPERSEDED", "armed pool is superseded, never rewritten");
+      Check(e.PoolTags(1) == "PDH;SWING_HIGH" && e.PoolLower(1) == 2001.00 && e.PoolUpper(1) == 2001.20 && e.PoolInherited(1) == 1,
+            "clustered pool keeps all source tags and inherits touches");
+      CheckNear(e.PoolAnchor(1), 2001.10, 1e-9, "anchor = median member level");
+      CheckStr(P2Statuses(e), "SETUP", "PDH + swing produce one setup");
+      Check(e.EventTouches(0) == 1 && e.PoolActive(2), "touch count carried; wider level forms its own pool");
+     }
+   //--- touch rule
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, false, false, false);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      e.InjectLevel(LSR_LV_SWING_HIGH, 2001.00, 2001.00, "fx");
+      P2Feed(e, 0, 2000.00, 2000.20, 1999.90, 2000.10);
+      P2Feed(e, 1, 2000.10, 2001.00, 2000.00, 2000.50);
+      P2Feed(e, 2, 2000.50, 2000.90, 2000.40, 2000.60);
+      P2Feed(e, 3, 2000.60, 2001.00, 2000.50, 2001.00);
+      P2Feed(e, 4, 2001.00, 2001.00, 2000.70, 2000.80);
+      P2Feed(e, 5, 2000.80, 2001.50, 2000.70, 2000.90);
+      e.Flush();
+      Check(e.TouchCount() == 2, "re-entry without exit is the same touch");
+      Check(P2Statuses(e) == "SETUP" && e.EventTouches(0) == 2, "setup carries 2 pre-sweep touches");
+     }
+  }
+
+void TestPhase2Sources(void)
+  {
+   Suite("2 Events: sources");
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, true, true, false, false);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      datetime d0 = D'2026.01.05', d1 = D'2026.01.06', d2 = D'2026.01.07';
+      P2FeedAt(e, d0 + 10 * 3600, 2000.0, 2005.0, 1995.0, 2000.0);
+      P2FeedAt(e, d1 + 10 * 3600, 2000.0, 2010.0, 1990.0, 2000.0);
+      P2FeedAt(e, d1 + 17 * 3600, 2000.0, 2012.0, 1991.0, 2000.0);
+      P2FeedAt(e, d1 + 18 * 3600, 2000.0, 2008.0, 1993.0, 2000.0);
+      P2FeedAt(e, d2 + 1 * 3600, 2000.0, 2001.0, 1999.0, 2000.0);
+      P2FeedAt(e, d2 + 1 * 3600 + 60, 2000.0, 2013.0, 1999.5, 2005.0);
+      e.Flush();
+      bool ok = (e.LevelCount() == 4);
+      for(int i = 0; i < e.LevelCount() && ok; i++)
+        {
+         string k = e.LevelKind(i);
+         double p = e.LevelLo(i);
+         ok = ((k == "PDH" && p == 2012.0) || (k == "PDL" && p == 1990.0) || (k == "PSH" && p == 2012.0) || (k == "PSL" && p == 1991.0)) &&
+              e.LevelArm(i) == d2 + 3600;
+        }
+      Check(ok, "PDH/PDL/PSH/PSL from the previous complete day/session; first observed day skipped");
+      Check(e.PoolCount() == 4, "PDH and PSH at one price share a pool");
+      Check(P2Statuses(e) == "SETUP" && e.EventTags(0) == "PDH;PSH", "sweep of the clustered PDH+PSH pool");
+     }
+     {
+      LSR_EventConfig c;
+      P2Cfg(c, false, false, true, true);
+      CLSR_EventEngine e;
+      string err;
+      e.Init(LSR_TF_M1, c, err);
+      double b[10][4] = {{2000.00, 2000.50, 1999.80, 2000.20}, {2000.20, 2001.00, 2000.10, 2000.80},
+         {2000.80, 2002.00, 2000.60, 2001.50}, {2001.50, 2001.50, 2000.90, 2001.00},
+         {2001.00, 2001.20, 2000.40, 2000.60}, {2000.60, 2001.60, 2000.50, 2001.40},
+         {2001.40, 2001.90, 2001.20, 2001.30}, {2001.30, 2001.50, 2000.95, 2001.00},
+         {2001.00, 2001.40, 2000.85, 2001.10}, {2001.10, 2002.30, 2001.00, 2001.70}};
+      for(int i = 0; i < 10; i++)
+         P2Feed(e, i, b[i][0], b[i][1], b[i][2], b[i][3]);
+      e.Flush();
+      int eq = 0, eqi = -1;
+      for(int i = 0; i < e.LevelCount(); i++)
+         if(e.LevelKind(i) == "EQUAL_HIGHS")
+           {
+            eq++;
+            eqi = i;
+           }
+      Check(eq == 1 && e.LevelLo(eqi) == 2001.90 && e.LevelHi(eqi) == 2002.00, "equal highs from two confirmed swings within 3 pips");
+      int s = -1;
+      for(int i = 0; i < e.EventCount(); i++)
+         if(e.EventStatus(i) == "SETUP")
+            s = i;
+      Check(s >= 0 && e.CountStatus("SETUP") == 1, "one setup");
+      if(s >= 0)
+        {
+         CheckStr(e.EventTags(s), "SWING_HIGH;EQUAL_HIGHS", "setup pool tags");
+         CheckNear(e.PoolAnchor(e.EventPoolIndex(s)), 2001.95, 1e-9, "median of member prices");
+         CheckNear(e.EventPenetration(s), 0.30, 1e-9, "penetration beyond the pool upper band");
+        }
+     }
+   //--- deterministic rerun
+   CLSR_EventEngine r1, r2;
+   double ex[2][4] = {{2001.80, 2002.00, 2001.60, 2001.70}, {2001.70, 2002.60, 2001.50, 2001.60}};
+   P2SwingEngine(r1, 7, ex, 2);
+   P2SwingEngine(r2, 7, ex, 2);
+   Check(r1.EventCount() == r2.EventCount() && r1.EventCount() > 0 && r1.EventId(0) == r2.EventId(0), "identical input -> identical EventIDs");
+   LSR_EventConfig bad;
+   P2Cfg(bad, false, false, false, false);
+   string err;
+   Check(!LSR_ValidateEventConfig(bad, err), "all sources off is rejected");
+   P2Cfg(bad, true, true, true, true);
+   bad.equal_tol_mode = LSR_EQTOL_ATR_NORMALIZED;
+   Check(!LSR_ValidateEventConfig(bad, err), "ATR_NORMALIZED tolerance is SPEC-INCOMPLETE");
+  }
+
+//+------------------------------------------------------------------+
 void OnStart(void)
   {
    g_pass = 0;
    g_fail = 0;
-   g_report = "LSR Phase 1 blocking tests — contract " + LSR_PHASE1_CONTRACT_ID + "\n";
+   g_report = "LSR Phase 1+2 blocking tests — contracts " + LSR_PHASE1_CONTRACT_ID + ", " + LSR_PHASE2_CONTRACT_ID + "\n";
 
    TestJson();
    TestTimeframes();
@@ -844,6 +1168,9 @@ void OnStart(void)
    TestRiskAdmission();
    TestDataAudit();
    TestManifest();
+   TestPhase2Bars();
+   TestPhase2Sweeps();
+   TestPhase2Sources();
 
    string summary = StringFormat("RESULT: %s  passed=%d failed=%d  build=%d",
                                  g_fail == 0 ? "PASS" : "FAIL", g_pass, g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD));
