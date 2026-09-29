@@ -1384,6 +1384,21 @@ Implementing Phase 2 exposed the gaps below. Under 0B.13 each is closed here in 
 15. **Python reference (2.10).** `python/lsr_reference` recomputes every ledger from the M1 export and `reference_config.json` alone, without MQL5 code. Reconciliation passes only when every ledger of every active timeframe is byte-identical. Both implementations run the same blocking fixtures and must produce the same IDs.
 
 
+### Phase 2 completion record
+
+`Phase 2 — COMPLETE`
+
+`Date: 2026-09-29`
+
+`Files changed: added MQL5/Include/LiquiditySweepReversal/{LSR_Bars,LSR_Liquidity,LSR_Phase2}.mqh, MQL5/Scripts/LiquiditySweepReversal/LSR_EventReplay.mq5, python/lsr_reference/{__init__,engine,run_reference}.py, python/tests/test_engine.py, docs/Phase2_RunCard.md, research/phase2_smoke/; modified MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5, MQL5/Include/LiquiditySweepReversal/{LSR_DataAudit,LSR_Manifest}.mqh, MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5 (renamed from LSR_Phase1_Tests.mq5), .gitignore, this roadmap (2.12, this record, update log).`
+
+`Summary: Adds the single-pass event layer: M1 and timeframe bars, Wilder ATR, PDH/PDL, previous session, confirmed swings, equal highs/lows, immutable pools, touches, exact sweep classification, stable IDs and per-timeframe ledgers. Also adds the event replay script and an independent Python reference that reproduces every ledger byte for byte.`
+
+`Compile/Tests: MetaEditor 5.0.0.6182. LSR_Expert, LSR_Tests, LSR_RawTickAudit and LSR_EventReplay compile with 0 errors and 0 warnings. LSR_Tests: PASS 273/273. Python unittest: 12/12 OK, with identical fixture IDs (event fe6198d644d45855, level 64a5fad6d55b0573). Synthetic replay (172,635 M1 bars): 12/12 ledgers byte-identical. Smoke run on XAUUSD (FundedNext-Server 2, real ticks, 2026.01.01–2026.07.01 exclusive, deposit 100000 USD, all inputs at their defaults, 84,554,990 ticks): DATA-PASSED (fallback 0.19%, quarantine 0.20%, 5 auto closures, 6 quarantined gaps). Setups: M5 3679 (1919 long/1760 short), M15 1210 (625/585), H1 316 (173/143). Python reconciliation: PASS, 12/12 ledgers byte-identical. Ledger checksum 5b901374f4300f34d6e419eecd8940677c5a98e91b53c3e50782507a5835e40f, equal in the MQL5 manifest and the Python report. The packet is in research/phase2_smoke/.`
+
+`Findings for Phase 3 interpretation: PreSweepTouchCount is 0 for 99.4% of M5 events. A single-price level is almost always either swept or breached the first time price reaches it; a touch needs a bar that enters the band without crossing it. This follows the frozen definitions (2.12 items 10 and 12) and is not tuned. The tick history was re-downloaded between the Phase 1 and Phase 2 runs; the Phase 2 data audit is the one that applies to this packet.`
+
+
 # Phase 3 — Pre-Implementation Event Study & Early-Stop Decision
 
 ## Goal
@@ -2803,6 +2818,10 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-29 — Phase 2 COMPLETE
+
+- The rapid-sample smoke run was DATA-PASSED and Python reconciliation was byte-identical for M5, M15 and H1. Ledger checksum 5b901374f4300f34d6e419eecd8940677c5a98e91b53c3e50782507a5835e40f. The Phase 2 Gate is passed and Phase 3 may begin. Evidence is in `research/phase2_smoke/`.
 
 ## Update 2026-09-29 — Test script renamed
 
