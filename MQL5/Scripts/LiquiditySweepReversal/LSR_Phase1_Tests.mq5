@@ -615,6 +615,74 @@ void BuildAuditFixture(MqlTick &ticks[], MqlRates &rates[], const bool degrade)
      }
   }
 
+//+------------------------------------------------------------------+
+//| Day fixture: `minutes` minutes from `base`, 6 ticks per minute.  |
+//| drops[k] = {fromMinute, toMinute, dropBar}; ticks always dropped.|
+//+------------------------------------------------------------------+
+void BuildDayFixture(MqlTick &ticks[], MqlRates &rates[], const datetime base, const int minutes,
+                     const int &drops[][3], const int nDrops)
+  {
+   ArrayResize(ticks, 0, minutes * 6);
+   ArrayResize(rates, 0, minutes);
+   for(int m = 0; m < minutes; m++)
+     {
+      bool dropTicks = false, dropBar = false;
+      for(int k = 0; k < nDrops; k++)
+         if(m >= drops[k][0] && m <= drops[k][1])
+           {
+            dropTicks = true;
+            dropBar = (drops[k][2] != 0);
+           }
+      datetime mt = base + m * 60;
+      double first = 2000.0 + (m % 100) * 0.1;
+      if(!dropTicks)
+         for(int s = 0; s < 6; s++)
+           {
+            int n = ArraySize(ticks);
+            ArrayResize(ticks, n + 1, minutes * 6);
+            double bid = first + s * 0.01;
+            MkTick(ticks[n], mt + s * 10, 0, bid, bid + 0.20);
+           }
+      if(!dropBar)
+        {
+         int r = ArraySize(rates);
+         ArrayResize(rates, r + 1, minutes);
+         ZeroMemory(rates[r]);
+         rates[r].time = mt;
+         rates[r].open = first;
+         rates[r].high = first + 0.05;
+         rates[r].low = first;
+         rates[r].close = first + 0.05;
+        }
+     }
+  }
+
+//--- Feeds fixtures to the audit in hourly chunks, as CLSR_RawAuditDriver does.
+void FeedHourly(CLSR_RawTickAudit &audit, const MqlTick &ticks[], const MqlRates &rates[],
+                const datetime from, const datetime to)
+  {
+   for(datetime c = from; c < to; c += 3600)
+     {
+      MqlTick ct[];
+      MqlRates cr[];
+      for(int i = 0; i < ArraySize(ticks); i++)
+         if(ticks[i].time >= c && ticks[i].time < c + 3600)
+           {
+            int n = ArraySize(ct);
+            ArrayResize(ct, n + 1);
+            ct[n] = ticks[i];
+           }
+      for(int i = 0; i < ArraySize(rates); i++)
+         if(rates[i].time >= c && rates[i].time < c + 3600)
+           {
+            int n = ArraySize(cr);
+            ArrayResize(cr, n + 1);
+            cr[n] = rates[i];
+           }
+      audit.ProcessChunk(ct, ArraySize(ct), cr, ArraySize(cr), c, c + 3600);
+     }
+  }
+
 CLSR_SessionSchedule g_auditSched;
 CLSR_ClosureCalendar g_auditCal;
 CLSR_ClosureCalendar g_noCal;
@@ -632,8 +700,11 @@ void TestDataAudit(void)
    CLSR_RawTickAudit clean;
    clean.Init(GetPointer(g_auditSched), GetPointer(g_noCal), LSR_PRICE_BID, 0.01, D'2026.01.05', D'2026.01.06', "TEST");
    clean.ProcessChunk(ticks, ArraySize(ticks), rates, ArraySize(rates), D'2026.01.05 01:00', D'2026.01.05 02:00');
+   Check(clean.Gate() == LSR_DATA_AUDIT_INCOMPLETE, "gate is AUDIT-INCOMPLETE before Finalize");
+   clean.Finalize();
    Check(clean.EligibleMinutes() == 60 && clean.FallbackMinutes() == 0, "clean hour: 60 eligible, 0 fallback");
-   Check(clean.CriticalGapCount() == 0, "clean hour: session start after range start is not a gap");
+   Check(clean.CriticalGapCount() == 0 && clean.ClosureCount() == 0, "clean hour: session start after range start is not a gap");
+   Check(clean.QuarantinedMinutes() == 0 && clean.Gate() == LSR_DATA_PASSED, "clean gate DATA-PASSED, nothing quarantined");
 
    //--- Degraded hour with a declared closure 01:40–01:50
    g_auditCal.Clear();
@@ -646,11 +717,56 @@ void TestDataAudit(void)
    Check(a.EligibleMinutes() == 50, "declared closure minutes are not eligible (60 - 10)");
    Check(a.FallbackMinutes() == 8, "fallback = 3 no-tick+bar, 4 no-tick-no-bar, 1 reconciliation failure");
    CheckNear(a.FallbackShare(), 8.0 / 50.0, 1e-12, "fallback share");
-   Check(a.CriticalGapCount() == 1, "7-minute tick gap is one critical gap; closure gap excluded");
-   Check(a.Gate() == LSR_DATA_FAILED, "gate DATA-FAILED");
-   Check(clean.Gate() == LSR_DATA_PASSED, "clean gate DATA-PASSED");
-   Check(StringFind(a.GapsCsv(), "2026-01-05T01:09:50,2026-01-05T01:17:00,430") >= 0, "gap interval recorded");
+   Check(a.CriticalGapCount() == 1 && a.ClosureCount() == 0, "mid-session 7-minute gap is a critical gap, not a closure");
+   Check(a.QuarantinedMinutes() == 9, "quarantine = 8 PFM minutes + partial gap minute 01:09");
+   Check(a.IsQuarantined(D'2026.01.05 01:12') && a.IsQuarantined(D'2026.01.05 01:30:30') && !a.IsQuarantined(D'2026.01.05 01:20'), "quarantine lookup");
+   Check(a.Gate() == LSR_DATA_FAILED, "quarantine share 18% -> DATA-FAILED");
+   Check(StringFind(a.GapsCsv(), "2026-01-05T01:09:50,2026-01-05T01:17:00,430,QUARANTINED") >= 0, "gap interval recorded as quarantined");
    Check(StringFind(a.FallbackCsv(), "2026-01-05T01:30:00,PFM_RECONCILIATION_FAILED") >= 0, "reconciliation failure listed");
+
+   //--- Boundary helpers
+   Check(g_auditSched.IsSessionStartAt(D'2026.01.05 01:00') && !g_auditSched.IsSessionStartAt(D'2026.01.05 01:01'), "session start boundary");
+   Check(g_auditSched.IsSessionEndAt(D'2026.01.05 23:57') && !g_auditSched.IsSessionEndAt(D'2026.01.05 23:56'), "session end boundary");
+   CLSR_SessionSchedule full;
+   full.AddBrokerInterval(1, 4500, 86400, e);
+   Check(full.IsSessionEndAt(D'2026.01.06 00:00'), "24:00 end boundary seen at next midnight");
+
+   //--- Full-day fixture, Mon [01:00, 23:00): a holiday-style early close,
+   //--- a Feb-20-style no-bar hole and a bar-without-ticks (fallback) hole.
+   CLSR_SessionSchedule day;
+   day.AddBrokerInterval(1, 3600, 23 * 3600, e);
+   int drops[3][3] = {{600, 607, 1}, {700, 701, 0}, {1280, 1319, 1}};   // fromMinute, toMinute, dropBar
+   BuildDayFixture(ticks, rates, D'2026.01.05 01:00', 1320, drops, 3);
+   CLSR_RawTickAudit d;
+   d.Init(GetPointer(day), GetPointer(g_noCal), LSR_PRICE_BID, 0.01, D'2026.01.05', D'2026.01.06', "TEST");
+   FeedHourly(d, ticks, rates, D'2026.01.05', D'2026.01.06');
+   d.Finalize();
+   Check(d.ClosureCount() == 1, "early close (no ticks, no bars, reaches session end) auto-detected as closure");
+   Check(d.EligibleMinutes() == 1280, "closure minutes excluded from eligible (1320 - 40)");
+   Check(d.CriticalGapCount() == 1, "mid-session no-bar hole stays a critical gap");
+   Check(d.FallbackMinutes() == 10, "PFM = 8 no-bar + 2 bar-without-ticks");
+   Check(d.QuarantinedMinutes() == 11, "quarantine = 10 PFM + partial gap minute");
+   Check(d.IsQuarantined(D'2026.01.05 11:03') && d.IsQuarantined(D'2026.01.05 12:41') && !d.IsQuarantined(D'2026.01.05 12:00'), "both holes quarantined");
+   Check(!d.IsQuarantined(D'2026.01.05 22:30'), "closure is not quarantine");
+   Check(d.Gate() == LSR_DATA_PASSED, "quarantine share 0.86% <= 1% -> DATA-PASSED");
+   Check(StringFind(d.ClosuresCsv(), "2026-01-05T22:19:50,2026-01-05T23:00:00") >= 0, "closure interval recorded");
+
+   //--- Same day, but bars still exist after the last tick: never a closure.
+   int drops2[1][3] = {{1280, 1319, 0}};
+   BuildDayFixture(ticks, rates, D'2026.01.05 01:00', 1320, drops2, 1);
+   CLSR_RawTickAudit d2;
+   d2.Init(GetPointer(day), GetPointer(g_noCal), LSR_PRICE_BID, 0.01, D'2026.01.05', D'2026.01.06', "TEST");
+   FeedHourly(d2, ticks, rates, D'2026.01.05', D'2026.01.06');
+   d2.Finalize();
+   Check(d2.ClosureCount() == 0 && d2.CriticalGapCount() == 1, "bars without ticks at session end is a gap, not a closure");
+   Check(d2.Gate() == LSR_DATA_FAILED, "40 fallback minutes -> DATA-FAILED");
+
+   //--- Quarantine CSV round-trip
+   string qpath = "LSR\\tests\\quarantine_fixture.csv";
+   LSR_WriteUtf8File(qpath, d.QuarantineCsv(), true);
+   CLSR_DataQuarantine q;
+   Check(q.LoadCsv(qpath, e) && q.Count() == 2, "quarantine CSV loads (2 windows)");
+   Check(q.IsQuarantined(D'2026.01.05 11:05') && !q.IsQuarantined(D'2026.01.05 11:30'), "loaded quarantine lookup");
 
    //--- Tradeable segments across a session break and a weekend
    datetime sf[], st[];

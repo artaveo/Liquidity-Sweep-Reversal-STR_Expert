@@ -36,6 +36,7 @@ input group "1.4 Tick/data-quality audit"
 input datetime                      InpAuditRequestedStartDate    = D'2026.01.01';    // AuditRequestedStartDate (copy from tester)
 input datetime                      InpAuditRequestedEndDate      = D'2026.06.30';    // AuditRequestedEndDate (inclusive date, copy from tester)
 input string                        InpClosedMarketCalendarFile   = "";               // ClosedMarketCalendarFile (Common\Files CSV, optional)
+input string                        InpDataQuarantineFile         = "";               // DataQuarantineFile (raw-audit quarantine CSV, optional)
 
 //--- 1.5 / 1.6 Symbol and quotes
 input group "1.5/1.6 Symbol price units and quote model"
@@ -133,6 +134,7 @@ LSR_SymbolSpec         g_spec;
 CLSR_PriceUnits        g_units;
 CLSR_SessionSchedule   g_sched;
 CLSR_ClosureCalendar   g_calendar;
+CLSR_DataQuarantine    g_quarantine;
 CLSR_StrategyWindow    g_window;
 LSR_CostModel          g_costs;
 LSR_RiskConfig         g_risk;
@@ -171,6 +173,7 @@ void RecordInputs(void)
    g_inputs.Add("AuditRequestedStartDate", LSR_IsoDate(InpAuditRequestedStartDate), "2026-01-01");
    g_inputs.Add("AuditRequestedEndDate", LSR_IsoDate(InpAuditRequestedEndDate), "2026-06-30");
    g_inputs.Add("ClosedMarketCalendarFile", InpClosedMarketCalendarFile, "");
+   g_inputs.Add("DataQuarantineFile", InpDataQuarantineFile, "");
    g_inputs.AddNum("StrategyPipSize", InpStrategyPipSize, LSR_BASELINE_STRATEGY_PIP_SIZE);
    g_inputs.Add("SignalBarPriceSource", LSR_PriceSourceName(InpSignalBarPriceSource), "BID");
    g_inputs.Add("StopExecutionProfile", LSR_StopProfileName(InpStopExecutionProfile), "LIVE_NATIVE_STOP");
@@ -311,6 +314,8 @@ int OnInit(void)
    if(g_rangeEndExclusive <= g_rangeStart)
       return Fail("AuditRequestedEndDate must not be before AuditRequestedStartDate");
    if(!g_calendar.LoadCsv(InpClosedMarketCalendarFile, err))
+      return Fail(err);
+   if(!g_quarantine.LoadCsv(InpDataQuarantineFile, err))
       return Fail(err);
    g_rawAudit.Init(GetPointer(g_sched), GetPointer(g_calendar), InpSignalBarPriceSource, g_spec.point,
                    g_rangeStart, g_rangeEndExclusive, "TESTER_CopyTicksRange_COPY_TICKS_ALL");
@@ -541,6 +546,8 @@ void WriteFinalPackage(const int deinitReason)
      {
       g_out.Write("potential_fallback_minutes.csv", g_rawAudit.FallbackCsv());
       g_out.Write("critical_data_gaps.csv", g_rawAudit.GapsCsv());
+      g_out.Write("detected_market_closures.csv", g_rawAudit.ClosuresCsv());
+      g_out.Write("data_quarantine_windows.csv", g_rawAudit.QuarantineCsv());
      }
    string csv = "timeframe,bar_time,kind,built_open,built_high,built_low,built_close,platform_open,platform_high,platform_low,platform_close\n";
    for(int i = 0; i < g_ctxCount; i++)
@@ -597,8 +604,12 @@ void WriteFinalPackage(const int deinitReason)
       j.KStr("raw_audit_source", "CopyTicksRange COPY_TICKS_ALL + CopyRates M1");
       j.KNum("potential_fallback_minute_share", g_rawAudit.FallbackShare(), 8);
       j.KInt("critical_data_gap_count", g_rawAudit.CriticalGapCount());
+      j.KInt("auto_detected_market_closures", g_rawAudit.ClosureCount());
+      j.KNum("quarantine_share", g_rawAudit.QuarantineShare(), 8);
       j.KStr("data_gate", LSR_DataGateName(g_rawAudit.Gate()));
      }
+   j.KStr("data_quarantine_file", InpDataQuarantineFile);
+   j.KInt("data_quarantine_windows_loaded", g_quarantine.Count());
    j.EndObject();
    j.KObj("account_rules");
    j.KStr("profile", LSR_AccountRuleProfileName(g_acctProfile.profile));
@@ -644,8 +655,9 @@ void WriteFinalPackage(const int deinitReason)
    PrintFormat("LSR Phase 1 package written to Common\\Files\\%s (manifest sha256 %s, write failures %d)",
                g_out.Dir(), sha, g_out.Failures());
    if(g_runContext == LSR_CONTEXT_RESEARCH)
-      PrintFormat("LSR data gate: %s  fallback share=%s  critical gaps=%I64d",
-                  LSR_DataGateName(g_rawAudit.Gate()), LSR_NumStr(g_rawAudit.FallbackShare(), 6), g_rawAudit.CriticalGapCount());
+      PrintFormat("LSR data gate: %s  fallback share=%s  quarantine share=%s  quarantined gaps=%I64d  auto closures=%I64d",
+                  LSR_DataGateName(g_rawAudit.Gate()), LSR_NumStr(g_rawAudit.FallbackShare(), 6), LSR_NumStr(g_rawAudit.QuarantineShare(), 6),
+                  g_rawAudit.CriticalGapCount(), g_rawAudit.ClosureCount());
   }
 
 //+------------------------------------------------------------------+

@@ -1076,6 +1076,12 @@ Implementing Phase 1 exposed these gaps. Under 0B.13 each one is closed here, in
 14. **Optional guards.** Enabling `MaxTotalDrawdownEnabled` or `MaxConsecutiveLossGuardEnabled` fails initialization as SPEC-INCOMPLETE until Phase 5 defines their peak/R/reset formulas. `DirectionalPositionCap` counts open Long and Short positions separately and rejects when the count is already ≥ `MaxDirectionalPositions`.
 15. **Output package.** The EA writes to `Common\Files\LSR\<ExperimentId>\` (ExperimentId: 1–64 characters, letters, digits, `-`, `_` or `.`). Files are written as UTF-8 without a BOM, and `manifest.json` is written last with the SHA-256 of every other file. Phase 1 has no ledger, so `ledger_checksum` is `null`.
 
+16. **Automatic market closures and data quarantine.** This rule supersedes the whole-run failure caused by a single `CriticalDataGap`; the reason was found in the first rapid-sample smoke run on 2026-09-29.
+    - **Automatic market closure.** A tick-free tradeable segment longer than `CriticalDataGapThresholdMinutes` is a closure when two things hold. First, no M1 bar exists in any minute that lies fully inside it. Second, it starts exactly at a broker session start or ends exactly at a broker session end, which covers holidays and early closes. A closure is excluded from `AuditEligibleMinute` and is not a `CriticalDataGap`. When no bar exists, the tester cannot generate ticks and no trade can execute, so this exclusion never hides fabricated data. `ClosedMarketCalendarFile` stays available as an optional declared supplement.
+    - **Quarantine.** Every PotentialFallbackMinute and every eligible minute that overlaps a remaining `CriticalDataGap` is quarantined. Later phases must admit **no new entry** at a timestamp inside a quarantine window. Research runs load the windows through input `DataQuarantineFile`; the raw audit writes them as `*quarantine_windows.csv`. Every critical gap is therefore quarantined, and `MaxCriticalDataGapCount = 0` applies to unquarantined gaps.
+    - **Gate.** `DATA-PASSED` requires `PotentialFallbackMinuteShare ≤ MaxFallbackMinuteShare` and `QuarantineShare = quarantined eligible minutes / AuditEligibleMinute ≤ MaxFallbackMinuteShare` (1%). Otherwise the run is `DATA-FAILED`. If a history copy fails or no minute is eligible, the result is `AUDIT-INCOMPLETE`.
+    - Closures, critical gaps and quarantine windows are listed row by row in the run package.
+
 
 ## Phase 1 Gate
 
@@ -1103,6 +1109,8 @@ Data-quality report, symbol/session snapshot, cost/execution contract, AccountRu
 `Phase 1 — IMPLEMENTED (Gate pending: blocking-test run and rapid-sample smoke packet)`
 
 `Date: 2026-09-28`
+
+`Files changed (2026-09-29 closure/quarantine update): modified MQL5/Include/LiquiditySweepReversal/{LSR_DataAudit,LSR_Sessions}.mqh, MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5, MQL5/Scripts/LiquiditySweepReversal/{LSR_Phase1_Tests,LSR_RawTickAudit}.mq5, docs/Phase1_RunCard.md, this roadmap (1.12 item 16, update log).`
 
 `Files changed: added .gitignore; MQL5/Include/LiquiditySweepReversal/{LSR_Types,LSR_Json,LSR_Timeframes,LSR_BrokerTime,LSR_Sessions,LSR_SymbolSpec,LSR_Quote,LSR_Costs,LSR_Sizing,LSR_AccountRules,LSR_RiskAdmission,LSR_DataAudit,LSR_Manifest,LSR_Phase1}.mqh; MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5; MQL5/Scripts/LiquiditySweepReversal/{LSR_Phase1_Tests,LSR_RawTickAudit}.mq5; docs/Phase1_RunCard.md; docs/DataManifest.schema.json. Modified: Liquidity_Sweep_Reversal_Roadmap.md (1.12, this record, update log). Removed: none.`
 
@@ -2767,6 +2775,11 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-29 — Automatic closure detection and data quarantine
+
+- The first rapid-sample smoke run was DATA-FAILED: fallback share 1.93% and 12 critical gaps. Ten of the gaps and about 99% of the fallback minutes were holidays and early closes that `SymbolInfoSessionTrade` does not list (2026-01-01, 01-19, 02-16, 04-03, 05-25, 06-19). Two were real broker data holes: 2026-02-20 20:31, 8 minutes with no bars; and 2026-06-17 22:00, 20 minutes with bars but no ticks, where tester fallback ticks are possible. The same run also used a tester end date of 2026-09-25 and a 10000 deposit instead of the Run Card values.
+- Added 1.12 item 16: automatic market-closure detection; per-window quarantine of fallback minutes and critical gaps, where later phases admit no new entries; and a quarantine-share gate that replaces the whole-run failure caused by a single gap. Added the `DataQuarantineFile` input and the closure and quarantine CSV outputs, plus blocking tests.
 
 ## Update 2026-09-28 — Phase 1 implementation
 

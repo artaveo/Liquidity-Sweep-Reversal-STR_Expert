@@ -240,6 +240,47 @@ public:
       return false;
      }
 
+   //--- t is exactly the start of a broker-declared session (not a midnight continuation).
+   bool              IsSessionStartAt(const datetime t) const
+     {
+      int dow = LSR_DayOfWeek(t);
+      int sod = LSR_SecondsOfDay(t);
+      for(int i = 0; i < m_count[dow]; i++)
+         if(!m_iv[dow][i].continuation && m_iv[dow][i].from_sec == sod)
+            return true;
+      return false;
+     }
+
+   //--- t is exactly the exclusive end of a session that does not continue past midnight.
+   bool              IsSessionEndAt(const datetime t) const
+     {
+      int sod = LSR_SecondsOfDay(t);
+      int dow = LSR_DayOfWeek(t);
+      int endSec = sod;
+      if(sod == 0)
+        {
+         dow = (dow + 6) % 7;
+         endSec = LSR_SECONDS_PER_DAY;
+        }
+      for(int i = 0; i < m_count[dow]; i++)
+        {
+         if(m_iv[dow][i].to_sec != endSec)
+            continue;
+         if(endSec == LSR_SECONDS_PER_DAY)
+           {
+            int next = (dow + 1) % 7;
+            bool continues = false;
+            for(int k = 0; k < m_count[next]; k++)
+               if(m_iv[next][k].continuation)
+                  continues = true;
+            if(continues)
+               continue;
+           }
+         return true;
+        }
+      return false;
+     }
+
    //--- Appends the absolute session intervals of broker day `day` (clipped to [a,b)).
    int               DaySegments(const datetime day, const datetime a, const datetime b,
                                  datetime &segFrom[], datetime &segTo[]) const

@@ -31,8 +31,8 @@ If any test fails, stop. Phase 1 is not complete.
 | Symbol | `XAUUSD` (FundedNext MT5 server) |
 | Period (chart) | any. Signal timeframes come from `TimeframeSet`, not from the chart |
 | Modelling | **Every tick based on real ticks** |
-| Date | Custom period **2026.01.01 → 2026.06.30** |
-| Deposit / currency | 100000 USD. It must match `AccountCurrency`, otherwise init fails |
+| Date | Custom period **2026.01.01 → 2026.06.30** | ← check the END date: the first smoke run used 2026.09.25 by mistake
+| Deposit / currency | 100000 USD (the first smoke run used 10000 by mistake). It must match `AccountCurrency`, otherwise init fails |
 | Optimization | Disabled |
 
 The EA cannot read the tester's date fields, so `AuditRequestedStartDate` and `AuditRequestedEndDate` must be copied from this table by hand (roadmap 1.4).
@@ -57,6 +57,7 @@ The table below lists every input with its default. The EA writes the same list,
 | 1.3 | TradeStartTime / TradeEndTime | `00:00` / `24:00` (Mode 3 only; always validated) |
 | 1.4 | AuditRequestedStartDate / EndDate | `2026-01-01` / `2026-06-30` (end date inclusive) |
 | 1.4 | ClosedMarketCalendarFile | *(empty)* |
+| 1.12 | DataQuarantineFile | *(empty)* (Phase 4+ trading runs load the raw-audit quarantine CSV) |
 | 1.5 | StrategyPipSize | `0.10` |
 | 0B.16 | SignalBarPriceSource | `BID` |
 | 0.4 | StopExecutionProfile | `LIVE_NATIVE_STOP` |
@@ -89,7 +90,11 @@ Pre-registered stress scenarios are separate declared runs. Only these values ar
 - Slippage (`FIXED_ADVERSE_POINTS`): each leg ∈ {0, 1, 2, 5} symbol points, and at least one leg must be non-zero.
 - Latency (`FIXED_MS`): 100, 250 or 500 ms.
 
-## 5. Declared closed-market calendar (optional, frozen before the run)
+## 5. Market closures and data quarantine (roadmap 1.12 item 16)
+
+Holidays and early closes are detected automatically. A tick-free stretch with no M1 bars that touches a session start or end is a closure, and no calendar is needed. Other bad data is quarantined minute by minute, and later phases open no new trades inside a quarantine window. The run fails only when quarantined minutes exceed 1% of eligible minutes.
+
+Optional declared calendar (a supplement, frozen before the run):
 
 `SymbolInfoSessionTrade` holds only the weekly schedule, so holiday closures must be declared. If they are not, they count as data gaps. The calendar is a file in `Common\Files`:
 
@@ -115,13 +120,14 @@ Run `LSR_RawTickAudit` on an `XAUUSD` chart with the same ExperimentId, dates an
 | `account_rule_profile.json` | AccountRule profile snapshot |
 | `run_card_inputs.txt` | Exact Inputs (non-default values marked `*`) |
 | `potential_fallback_minutes.csv`, `critical_data_gaps.csv`, `timeframe_bar_reconciliation.csv` | Row-level audit evidence |
+| `detected_market_closures.csv`, `data_quarantine_windows.csv` | Auto-detected closures; quarantine windows (loadable as `DataQuarantineFile`) |
 
 ## 8. Gate checklist (submit with the package)
 
 - [ ] Blocking tests: `RESULT: PASS`, `failed=0`
 - [ ] All programs compile: 0 errors, 0 warnings
 - [ ] `manifest.json` → `inputs.non_default_inputs` lists only identity fields
-- [ ] `data_quality_report.json` → `raw_real_tick_audit.gates.result` is `DATA-PASSED`, or the failure is explained by an exception frozen **before** results were read
+- [ ] `data_quality_report.json` → `raw_real_tick_audit.gates.result` is `DATA-PASSED` (fallback share ≤ 1% and quarantine share ≤ 1%)
 - [ ] `coverage.declared_vs_observed` is reviewed
 - [ ] `signal_timeframe_ohlc_reconciliation` shows `bars_mismatched = 0` for every active timeframe
 - [ ] No strategy-selection decision has been made

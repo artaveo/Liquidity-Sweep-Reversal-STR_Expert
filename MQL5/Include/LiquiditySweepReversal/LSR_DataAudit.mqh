@@ -10,6 +10,11 @@
 //| CriticalDataGap        = continuously tradeable interval between |
 //|                          consecutive usable raw ticks longer than|
 //|                          CriticalDataGapThresholdMinutes.        |
+//| MarketClosure          = tick-free segment with no M1 bar inside |
+//|                          touching a session start/end (holiday,  |
+//|                          early close); not eligible, not a gap.  |
+//| Quarantine             = every PFM minute + every minute that    |
+//|                          overlaps a critical gap; no new entries.|
 //| PotentialFallbackMinute is never labelled "generated ticks".     |
 //+------------------------------------------------------------------+
 #ifndef LSR_DATAAUDIT_MQH
@@ -131,7 +136,18 @@ void LSR_WriteTickAnomaliesJson(CLSR_Json &j, const LSR_TickAnomalies &a)
 
 //+------------------------------------------------------------------+
 //| Raw real-tick record audit, processed in contiguous chunks.      |
+//| Per-minute evidence is collected for the whole declared range;   |
+//| closures, gaps, PFM classes and the quarantine are resolved in   |
+//| Finalize() (roadmap 1.4, 1.12 item 16).                          |
 //+------------------------------------------------------------------+
+#define LSR_MINUTE_BAR_NONE     0
+#define LSR_MINUTE_BAR_MATCH    1
+#define LSR_MINUTE_BAR_MISMATCH 2
+
+#define LSR_MINUTE_STATE_NORMAL     0
+#define LSR_MINUTE_STATE_CLOSURE    1   // automatically detected market closure
+#define LSR_MINUTE_STATE_GAP        2   // overlaps a critical data gap
+
 class CLSR_RawTickAudit
   {
 private:
@@ -144,6 +160,7 @@ private:
    datetime          m_auditedTo;      // exclusive end of processed chunks
    int               m_thresholdSec;
    string            m_sourceLabel;
+   bool              m_finalized;
 
    LSR_TickAnomalies m_anom;
    bool              m_havePrev;
@@ -151,12 +168,22 @@ private:
    bool              m_haveUsable;
    long              m_lastUsableMsc;
 
+   int               m_minutes;
+   int               m_minTicks[];
+   uchar             m_minBar[];
+   uchar             m_minState[];
+
+   datetime          m_candFrom[];     // tick-free tradeable segments > threshold
+   datetime          m_candTo[];
+
    long              m_eligible;
    long              m_ok;
    long              m_pfmNoTicksNoBar;
    long              m_pfmNoTicksWithBar;
    long              m_pfmRecon;
+   long              m_quarantined;
    long              m_closedByCalendar;
+   long              m_closedAuto;
    long              m_ticksOutsideSchedule;
    long              m_chunkErrors;
 
@@ -164,21 +191,21 @@ private:
    int               m_pfmClass[];
    datetime          m_gapFrom[];
    datetime          m_gapTo[];
-   long              m_gapCount;
+   datetime          m_closFrom[];
+   datetime          m_closTo[];
+   datetime          m_qFrom[];
+   datetime          m_qTo[];
+   string            m_qReason[];
 
-   void              AddGap(const datetime a, const datetime b)
+   static void       Push(datetime &a[], datetime &b[], const datetime x, const datetime y)
      {
-      m_gapCount++;
-      int n = ArraySize(m_gapFrom);
-      if(n >= LSR_AUDIT_MAX_LISTED_ROWS)
-         return;
-      ArrayResize(m_gapFrom, n + 1);
-      ArrayResize(m_gapTo, n + 1);
-      m_gapFrom[n] = a;
-      m_gapTo[n] = b;
+      int n = ArraySize(a);
+      ArrayResize(a, n + 1);
+      ArrayResize(b, n + 1);
+      a[n] = x;
+      b[n] = y;
      }
 
-   //--- Critical segments strictly inside the tick-free interval (a, b).
    void              CheckGap(const datetime a, const datetime b)
      {
       if(b - a <= m_thresholdSec)
@@ -187,28 +214,60 @@ private:
       int n = LSR_TradeableSegments(m_sched, m_cal, a, b, sf, st);
       for(int i = 0; i < n; i++)
          if(st[i] - sf[i] > m_thresholdSec)
-            AddGap(sf[i], st[i]);
+            Push(m_candFrom, m_candTo, sf[i], st[i]);
      }
 
-   void              AddPfm(const datetime minute, const ENUM_LSR_MINUTE_CLASS c)
+   int               MinuteIndex(const datetime t) const { return (int)((t - m_rangeStart) / 60); }
+
+   //--- Any M1 bar among the minutes lying fully inside [s, e)?
+   bool              AnyBarInside(const datetime s, const datetime e) const
      {
-      int n = ArraySize(m_pfmTime);
-      if(n >= LSR_AUDIT_MAX_LISTED_ROWS)
+      int first = (int)((s - m_rangeStart + 59) / 60);
+      int last = (int)((e - m_rangeStart) / 60) - 1;
+      if(first < 0)
+         first = 0;
+      if(last >= m_minutes)
+         last = m_minutes - 1;
+      for(int i = first; i <= last; i++)
+         if(m_minBar[i] != LSR_MINUTE_BAR_NONE)
+            return true;
+      return false;
+     }
+
+   void              MarkMinutes(const datetime s, const datetime e, const uchar state, const bool fullyInsideOnly)
+     {
+      int first = fullyInsideOnly ? (int)((s - m_rangeStart + 59) / 60) : (int)((s - m_rangeStart) / 60);
+      int last = fullyInsideOnly ? (int)((e - m_rangeStart) / 60) - 1 : (int)((e - 1 - m_rangeStart) / 60);
+      if(first < 0)
+         first = 0;
+      if(last >= m_minutes)
+         last = m_minutes - 1;
+      for(int i = first; i <= last; i++)
+         if(m_minState[i] == LSR_MINUTE_STATE_NORMAL)
+            m_minState[i] = state;
+     }
+
+   void              AddQuarantine(const datetime s, const datetime e, const string reason)
+     {
+      int n = ArraySize(m_qFrom);
+      if(n > 0 && s <= m_qTo[n - 1])
+        {
+         if(e > m_qTo[n - 1])
+            m_qTo[n - 1] = e;
+         if(StringFind(m_qReason[n - 1], reason) < 0)
+            m_qReason[n - 1] += "+" + reason;
          return;
-      ArrayResize(m_pfmTime, n + 1);
-      ArrayResize(m_pfmClass, n + 1);
-      m_pfmTime[n] = minute;
-      m_pfmClass[n] = (int)c;
-     }
-
-   bool              BarMatches(const MqlRates &bar, const double o, const double h, const double l, const double c) const
-     {
-      return MathAbs(bar.open - o) <= m_tolerance && MathAbs(bar.high - h) <= m_tolerance &&
-             MathAbs(bar.low - l) <= m_tolerance && MathAbs(bar.close - c) <= m_tolerance;
+        }
+      ArrayResize(m_qFrom, n + 1);
+      ArrayResize(m_qTo, n + 1);
+      ArrayResize(m_qReason, n + 1);
+      m_qFrom[n] = s;
+      m_qTo[n] = e;
+      m_qReason[n] = reason;
      }
 
 public:
-                     CLSR_RawTickAudit(void) { m_sched = NULL; m_cal = NULL; }
+                     CLSR_RawTickAudit(void) { m_sched = NULL; m_cal = NULL; m_minutes = 0; }
 
    void              Init(CLSR_SessionSchedule *sched, CLSR_ClosureCalendar *cal, const ENUM_LSR_PRICE_SOURCE src,
                           const double point, const datetime rangeStart, const datetime rangeEndExclusive,
@@ -223,23 +282,42 @@ public:
       m_auditedTo = rangeStart;
       m_thresholdSec = LSR_CRITICAL_DATA_GAP_THRESHOLD_MIN * 60;
       m_sourceLabel = sourceLabel;
+      m_finalized = false;
       LSR_TickAnomaliesReset(m_anom);
       m_havePrev = false;
       m_haveUsable = false;
       m_lastUsableMsc = 0;
+      m_minutes = (int)MathMax(0, (m_rangeEnd - m_rangeStart) / 60);
+      ArrayResize(m_minTicks, m_minutes);
+      ArrayResize(m_minBar, m_minutes);
+      ArrayResize(m_minState, m_minutes);
+      if(m_minutes > 0)
+        {
+         ArrayInitialize(m_minTicks, 0);
+         ArrayInitialize(m_minBar, LSR_MINUTE_BAR_NONE);
+         ArrayInitialize(m_minState, LSR_MINUTE_STATE_NORMAL);
+        }
+      ArrayResize(m_candFrom, 0);
+      ArrayResize(m_candTo, 0);
       m_eligible = 0;
       m_ok = 0;
       m_pfmNoTicksNoBar = 0;
       m_pfmNoTicksWithBar = 0;
       m_pfmRecon = 0;
+      m_quarantined = 0;
       m_closedByCalendar = 0;
+      m_closedAuto = 0;
       m_ticksOutsideSchedule = 0;
       m_chunkErrors = 0;
-      m_gapCount = 0;
       ArrayResize(m_pfmTime, 0);
       ArrayResize(m_pfmClass, 0);
       ArrayResize(m_gapFrom, 0);
       ArrayResize(m_gapTo, 0);
+      ArrayResize(m_closFrom, 0);
+      ArrayResize(m_closTo, 0);
+      ArrayResize(m_qFrom, 0);
+      ArrayResize(m_qTo, 0);
+      ArrayResize(m_qReason, 0);
      }
 
    datetime          AuditedTo(void) const  { return m_auditedTo; }
@@ -287,7 +365,6 @@ public:
          if(!m_sched.IsInSession(ts))
             m_ticksOutsideSchedule++;
 
-         // gap bookkeeping on usable ticks only
          if(m_haveUsable)
             CheckGap((datetime)(m_lastUsableMsc / 1000), ts);
          else
@@ -322,60 +399,139 @@ public:
          datetime mt = chunkStart + m * 60;
          while(ri < nRates && rates[ri].time < mt)
             ri++;
-         bool haveBar = (ri < nRates && rates[ri].time == mt);
+         int idx = MinuteIndex(mt);
+         if(idx < 0 || idx >= m_minutes)
+            continue;
+         m_minTicks[idx] = cnt[m];
+         if(ri < nRates && rates[ri].time == mt)
+           {
+            bool match = cnt[m] > 0 &&
+                         MathAbs(rates[ri].open - o[m]) <= m_tolerance && MathAbs(rates[ri].high - h[m]) <= m_tolerance &&
+                         MathAbs(rates[ri].low - l[m]) <= m_tolerance && MathAbs(rates[ri].close - c[m]) <= m_tolerance;
+            m_minBar[idx] = match ? LSR_MINUTE_BAR_MATCH : LSR_MINUTE_BAR_MISMATCH;
+           }
+        }
+      m_auditedTo = chunkEnd;
+     }
 
-         if(mt < m_rangeStart || mt >= m_rangeEnd || !m_sched.IsInSession(mt))
+   //+---------------------------------------------------------------+
+   //| Resolves closures, critical gaps, minute classes and the       |
+   //| data quarantine. Call once after the last chunk.              |
+   //+---------------------------------------------------------------+
+   void              Finalize(void)
+     {
+      if(m_finalized)
+         return;
+      m_finalized = true;
+      datetime end = (m_auditedTo < m_rangeEnd ? m_auditedTo : m_rangeEnd);
+      if(m_haveUsable)
+         CheckGap((datetime)(m_lastUsableMsc / 1000), end);
+      else
+         CheckGap(m_rangeStart, end);
+
+      //--- 1) tick-free segments: automatic market closure or critical gap
+      int nc = ArraySize(m_candFrom);
+      for(int i = 0; i < nc; i++)
+        {
+         datetime s = m_candFrom[i], e = m_candTo[i];
+         bool touchesBoundary = m_sched.IsSessionStartAt(s) || m_sched.IsSessionEndAt(e);
+         if(touchesBoundary && !AnyBarInside(s, e))
+           {
+            Push(m_closFrom, m_closTo, s, e);
+            MarkMinutes(s, e, LSR_MINUTE_STATE_CLOSURE, true);
+           }
+         else
+           {
+            Push(m_gapFrom, m_gapTo, s, e);
+            MarkMinutes(s, e, LSR_MINUTE_STATE_GAP, false);
+           }
+        }
+
+      //--- 2) minute classes and quarantine
+      for(int idx = 0; idx < m_minutes; idx++)
+        {
+         datetime mt = m_rangeStart + idx * 60;
+         if(mt >= end)
+            break;
+         if(!m_sched.IsInSession(mt))
             continue;
          if(m_cal.Contains(mt))
            {
             m_closedByCalendar++;
             continue;
            }
+         if(m_minState[idx] == LSR_MINUTE_STATE_CLOSURE)
+           {
+            m_closedAuto++;
+            continue;
+           }
          m_eligible++;
          ENUM_LSR_MINUTE_CLASS cls;
-         if(cnt[m] == 0)
-            cls = haveBar ? LSR_MINUTE_PFM_NO_TICKS_WITH_BAR : LSR_MINUTE_PFM_NO_TICKS_NO_BAR;
+         if(m_minTicks[idx] == 0)
+            cls = (m_minBar[idx] != LSR_MINUTE_BAR_NONE) ? LSR_MINUTE_PFM_NO_TICKS_WITH_BAR : LSR_MINUTE_PFM_NO_TICKS_NO_BAR;
          else
-            cls = (haveBar && BarMatches(rates[ri], o[m], h[m], l[m], c[m])) ? LSR_MINUTE_OK : LSR_MINUTE_PFM_RECONCILIATION_FAILED;
+            cls = (m_minBar[idx] == LSR_MINUTE_BAR_MATCH) ? LSR_MINUTE_OK : LSR_MINUTE_PFM_RECONCILIATION_FAILED;
 
          switch(cls)
            {
             case LSR_MINUTE_OK:                        m_ok++; break;
-            case LSR_MINUTE_PFM_NO_TICKS_NO_BAR:       m_pfmNoTicksNoBar++; AddPfm(mt, cls); break;
-            case LSR_MINUTE_PFM_NO_TICKS_WITH_BAR:     m_pfmNoTicksWithBar++; AddPfm(mt, cls); break;
-            case LSR_MINUTE_PFM_RECONCILIATION_FAILED: m_pfmRecon++; AddPfm(mt, cls); break;
+            case LSR_MINUTE_PFM_NO_TICKS_NO_BAR:       m_pfmNoTicksNoBar++; break;
+            case LSR_MINUTE_PFM_NO_TICKS_WITH_BAR:     m_pfmNoTicksWithBar++; break;
+            case LSR_MINUTE_PFM_RECONCILIATION_FAILED: m_pfmRecon++; break;
+           }
+         if(cls != LSR_MINUTE_OK && ArraySize(m_pfmTime) < LSR_AUDIT_MAX_LISTED_ROWS)
+           {
+            int n = ArraySize(m_pfmTime);
+            ArrayResize(m_pfmTime, n + 1);
+            ArrayResize(m_pfmClass, n + 1);
+            m_pfmTime[n] = mt;
+            m_pfmClass[n] = (int)cls;
+           }
+         bool inGap = (m_minState[idx] == LSR_MINUTE_STATE_GAP);
+         if(cls != LSR_MINUTE_OK || inGap)
+           {
+            m_quarantined++;
+            AddQuarantine(mt, mt + 60, inGap ? "CRITICAL_DATA_GAP" : LSR_MinuteClassName(cls));
            }
         }
-      m_auditedTo = chunkEnd;
      }
 
-   //--- Trailing gap from the last usable tick to the audited end.
-   void              Finalize(void)
-     {
-      datetime end = (m_auditedTo < m_rangeEnd ? m_auditedTo : m_rangeEnd);
-      if(m_haveUsable)
-         CheckGap((datetime)(m_lastUsableMsc / 1000), end);
-      else
-         CheckGap(m_rangeStart, end);
-     }
-
-   long              EligibleMinutes(void) const  { return m_eligible; }
-   long              FallbackMinutes(void) const  { return m_pfmNoTicksNoBar + m_pfmNoTicksWithBar + m_pfmRecon; }
-   long              CriticalGapCount(void) const { return m_gapCount; }
-   long              ChunkErrors(void) const      { return m_chunkErrors; }
+   long              EligibleMinutes(void) const    { return m_eligible; }
+   long              FallbackMinutes(void) const    { return m_pfmNoTicksNoBar + m_pfmNoTicksWithBar + m_pfmRecon; }
+   long              QuarantinedMinutes(void) const { return m_quarantined; }
+   long              CriticalGapCount(void) const   { return ArraySize(m_gapFrom); }
+   long              ClosureCount(void) const       { return ArraySize(m_closFrom); }
+   long              ChunkErrors(void) const        { return m_chunkErrors; }
    double            FallbackShare(void) const
      {
       return m_eligible > 0 ? (double)FallbackMinutes() / (double)m_eligible : EMPTY_VALUE;
      }
+   double            QuarantineShare(void) const
+     {
+      return m_eligible > 0 ? (double)m_quarantined / (double)m_eligible : EMPTY_VALUE;
+     }
    bool              CoverageComplete(void) const { return m_auditedTo >= m_rangeEnd; }
 
+   //--- Every critical gap and PFM minute is quarantined, so no critical gap
+   //--- is ever left unquarantined; the run fails when the quarantine or the
+   //--- PFM share exceeds MaxFallbackMinuteShare.
    ENUM_LSR_DATA_GATE Gate(void) const
      {
-      if(m_chunkErrors > 0 || m_eligible == 0)
+      if(!m_finalized || m_chunkErrors > 0 || m_eligible == 0)
          return LSR_DATA_AUDIT_INCOMPLETE;
-      if(FallbackShare() > LSR_MAX_FALLBACK_MINUTE_SHARE || m_gapCount > LSR_MAX_CRITICAL_DATA_GAP_COUNT)
+      if(FallbackShare() > LSR_MAX_FALLBACK_MINUTE_SHARE || QuarantineShare() > LSR_MAX_FALLBACK_MINUTE_SHARE)
          return LSR_DATA_FAILED;
       return LSR_DATA_PASSED;
+     }
+
+   //--- Quarantine lookup for later phases (no new entries inside).
+   bool              IsQuarantined(const datetime t) const
+     {
+      int n = ArraySize(m_qFrom);
+      for(int i = 0; i < n; i++)
+         if(t >= m_qFrom[i] && t < m_qTo[i])
+            return true;
+      return false;
      }
 
    void              WriteJson(CLSR_Json &j) const
@@ -394,6 +550,12 @@ public:
       LSR_WriteTickAnomaliesJson(j, m_anom);
       j.KInt("usable_ticks_outside_broker_schedule", m_ticksOutsideSchedule);
       j.EndObject();
+      j.KObj("market_closures");
+      j.KInt("declared_calendar_minutes", m_closedByCalendar);
+      j.KInt("auto_detected_closures", ClosureCount());
+      j.KInt("auto_detected_closure_minutes", m_closedAuto);
+      j.KStr("auto_rule", "tick-free segment > threshold with no M1 bar inside that starts at a session start or ends at a session end");
+      j.EndObject();
       j.KObj("minutes");
       j.KInt("audit_eligible_minutes", m_eligible);
       j.KInt("ok_minutes", m_ok);
@@ -401,7 +563,6 @@ public:
       j.KInt("pfm_no_ticks_no_bar__no_tick_or_sparse_data", m_pfmNoTicksNoBar);
       j.KInt("pfm_no_ticks_with_bar__potential_tester_fallback", m_pfmNoTicksWithBar);
       j.KInt("pfm_reconciliation_failed", m_pfmRecon);
-      j.KInt("excluded_declared_closed_market_minutes", m_closedByCalendar);
       j.KStr("excluded_session_break_rule", "minutes outside SymbolInfoSessionTrade schedule are not audit-eligible");
       if(m_eligible > 0)
          j.KNum("potential_fallback_minute_share", FallbackShare(), 8);
@@ -411,12 +572,23 @@ public:
       j.EndObject();
       j.KObj("critical_data_gaps");
       j.KInt("threshold_minutes", LSR_CRITICAL_DATA_GAP_THRESHOLD_MIN);
-      j.KInt("count", m_gapCount);
-      j.KStr("exclusions", "scheduled session breaks, weekends, declared closed-market intervals");
+      j.KInt("count", CriticalGapCount());
+      j.KInt("unquarantined_count", 0);
+      j.KStr("exclusions", "scheduled session breaks, weekends, declared and auto-detected market closures");
+      j.EndObject();
+      j.KObj("quarantine");
+      j.KInt("windows", ArraySize(m_qFrom));
+      j.KInt("quarantined_eligible_minutes", m_quarantined);
+      if(m_eligible > 0)
+         j.KNum("quarantine_share", QuarantineShare(), 8);
+      else
+         j.KNull("quarantine_share");
+      j.KStr("rule", "every PFM minute and every minute overlapping a critical gap; no new entries inside");
       j.EndObject();
       j.KObj("gates");
       j.KNum("max_fallback_minute_share", LSR_MAX_FALLBACK_MINUTE_SHARE, 6);
-      j.KInt("max_critical_data_gap_count", LSR_MAX_CRITICAL_DATA_GAP_COUNT);
+      j.KNum("max_quarantine_share", LSR_MAX_FALLBACK_MINUTE_SHARE, 6);
+      j.KInt("max_unquarantined_critical_data_gap_count", LSR_MAX_CRITICAL_DATA_GAP_COUNT);
       j.KStr("result", LSR_DataGateName(Gate()));
       j.EndObject();
       j.EndObject();
@@ -433,11 +605,106 @@ public:
 
    string            GapsCsv(void) const
      {
-      string s = "gap_from_broker_time,gap_to_broker_time_exclusive,tradeable_seconds\n";
+      string s = "gap_from_broker_time,gap_to_broker_time_exclusive,tradeable_seconds,treatment\n";
       int n = ArraySize(m_gapFrom);
       for(int i = 0; i < n; i++)
-         s += LSR_IsoTime(m_gapFrom[i]) + "," + LSR_IsoTime(m_gapTo[i]) + "," + IntegerToString((long)(m_gapTo[i] - m_gapFrom[i])) + "\n";
+         s += LSR_IsoTime(m_gapFrom[i]) + "," + LSR_IsoTime(m_gapTo[i]) + "," +
+              IntegerToString((long)(m_gapTo[i] - m_gapFrom[i])) + ",QUARANTINED\n";
       return s;
+     }
+
+   string            ClosuresCsv(void) const
+     {
+      string s = "closure_from_broker_time,closure_to_broker_time_exclusive,seconds\n";
+      int n = ArraySize(m_closFrom);
+      for(int i = 0; i < n; i++)
+         s += LSR_IsoTime(m_closFrom[i]) + "," + LSR_IsoTime(m_closTo[i]) + "," +
+              IntegerToString((long)(m_closTo[i] - m_closFrom[i])) + "\n";
+      return s;
+     }
+
+   //--- Same format as CLSR_DataQuarantine::LoadCsv.
+   string            QuarantineCsv(void) const
+     {
+      string s = "# from,to_exclusive,reason (Broker Server Time)\n";
+      int n = ArraySize(m_qFrom);
+      for(int i = 0; i < n; i++)
+         s += TimeToString(m_qFrom[i], TIME_DATE | TIME_SECONDS) + "," +
+              TimeToString(m_qTo[i], TIME_DATE | TIME_SECONDS) + "," + m_qReason[i] + "\n";
+      return s;
+     }
+  };
+
+//+------------------------------------------------------------------+
+//| Data quarantine loaded from a raw-audit quarantine CSV. Later    |
+//| phases admit no new entry while IsQuarantined(t) is true.        |
+//+------------------------------------------------------------------+
+class CLSR_DataQuarantine
+  {
+private:
+   datetime          m_from[];
+   datetime          m_to[];
+   string            m_source;
+
+public:
+   bool              LoadCsv(const string fileName, string &error)
+     {
+      ArrayResize(m_from, 0);
+      ArrayResize(m_to, 0);
+      m_source = fileName;
+      error = "";
+      if(fileName == "")
+         return true;
+      int h = FileOpen(fileName, FILE_READ | FILE_TXT | FILE_ANSI | FILE_COMMON);
+      if(h == INVALID_HANDLE)
+        {
+         error = StringFormat("cannot open data quarantine file '%s' in Common\\Files (error %d)", fileName, GetLastError());
+         return false;
+        }
+      int lineNo = 0;
+      while(!FileIsEnding(h))
+        {
+         string line = FileReadString(h);
+         lineNo++;
+         StringTrimLeft(line);
+         StringTrimRight(line);
+         if(line == "" || StringGetCharacter(line, 0) == '#')
+            continue;
+         string f[];
+         if(StringSplit(line, ',', f) < 2)
+           {
+            error = StringFormat("quarantine line %d: expected from,to[,reason]", lineNo);
+            FileClose(h);
+            return false;
+           }
+         datetime a = StringToTime(f[0]);
+         datetime b = StringToTime(f[1]);
+         if(a <= 0 || b <= a)
+           {
+            error = StringFormat("quarantine line %d: invalid interval", lineNo);
+            FileClose(h);
+            return false;
+           }
+         int n = ArraySize(m_from);
+         ArrayResize(m_from, n + 1);
+         ArrayResize(m_to, n + 1);
+         m_from[n] = a;
+         m_to[n] = b;
+        }
+      FileClose(h);
+      return true;
+     }
+
+   int               Count(void) const  { return ArraySize(m_from); }
+   string            Source(void) const { return m_source; }
+
+   bool              IsQuarantined(const datetime t) const
+     {
+      int n = ArraySize(m_from);
+      for(int i = 0; i < n; i++)
+         if(t >= m_from[i] && t < m_to[i])
+            return true;
+      return false;
      }
   };
 

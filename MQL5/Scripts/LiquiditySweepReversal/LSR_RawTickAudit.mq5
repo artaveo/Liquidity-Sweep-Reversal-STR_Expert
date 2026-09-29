@@ -86,9 +86,11 @@ void OnStart(void)
    out.Write("raw_tick_audit_report.json", j.Text());
    out.Write("raw_tick_audit_fallback_minutes.csv", g_audit.FallbackCsv());
    out.Write("raw_tick_audit_critical_gaps.csv", g_audit.GapsCsv());
+   out.Write("raw_tick_audit_market_closures.csv", g_audit.ClosuresCsv());
+   out.Write("raw_tick_audit_quarantine_windows.csv", g_audit.QuarantineCsv());
 
-   PrintFormat("LSR raw audit %s: %s  eligible=%I64d fallback=%I64d share=%s gaps=%I64d -> Common\\Files\\%s",
+   PrintFormat("LSR raw audit %s: %s  eligible=%I64d fallback=%I64d quarantine share=%s quarantined gaps=%I64d closures=%I64d -> Common\\Files\\%s",
                _Symbol, LSR_DataGateName(g_audit.Gate()), g_audit.EligibleMinutes(), g_audit.FallbackMinutes(),
-               LSR_NumStr(g_audit.FallbackShare(), 6), g_audit.CriticalGapCount(), out.Dir());
+               LSR_NumStr(g_audit.QuarantineShare(), 6), g_audit.CriticalGapCount(), g_audit.ClosureCount(), out.Dir());
   }
 //+------------------------------------------------------------------+
