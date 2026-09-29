@@ -761,10 +761,11 @@ public:
         }
      }
 
-   //--- Audits the remaining complete minutes up to `lastTick`.
+   //--- End of run: no further ticks can arrive, so the minute containing
+   //--- `lastTick` is complete and is audited too.
    void              Flush(const datetime lastTick)
      {
-      datetime limit = lastTick - (lastTick % 60);
+      datetime limit = lastTick - (lastTick % 60) + 60;
       if(limit > m_audit.RangeEnd())
          limit = m_audit.RangeEnd();
       Advance(lastTick);

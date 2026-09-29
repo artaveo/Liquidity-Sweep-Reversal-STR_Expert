@@ -1106,9 +1106,9 @@ Data-quality report, symbol/session snapshot, cost/execution contract, AccountRu
 
 ### Phase 1 completion record
 
-`Phase 1 — IMPLEMENTED (Gate pending: blocking-test run and rapid-sample smoke packet)`
+`Phase 1 — COMPLETE`
 
-`Date: 2026-09-28`
+`Date: 2026-09-29 (implementation 2026-09-28)`
 
 `Files changed (2026-09-29 closure/quarantine update): modified MQL5/Include/LiquiditySweepReversal/{LSR_DataAudit,LSR_Sessions}.mqh, MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5, MQL5/Scripts/LiquiditySweepReversal/{LSR_Phase1_Tests,LSR_RawTickAudit}.mq5, docs/Phase1_RunCard.md, this roadmap (1.12 item 16, update log).`
 
@@ -1116,9 +1116,9 @@ Data-quality report, symbol/session snapshot, cost/execution contract, AccountRu
 
 `Summary: Adds a non-trading Phase 1 contract library and EA. They cover TimeframeSet/LiveTimeframe, broker-time sessions (Modes 1/2/3), price units, the Bid/Ask quote model, commission/slippage/latency, the spread/cost gate, stress-aware sizing, daily and aggregate/directional risk admission, and the FundedNext AccountRuleEngine. The EA also runs the raw-tick and OHLC data audit with PFM/critical-gap gates and writes the DataManifest run package.`
 
-`Compile/Tests: MetaEditor 5.0.0.6182: LSR_Expert, LSR_Phase1_Tests and LSR_RawTickAudit each compiled with 0 errors, 0 warnings. Blocking tests executed 2026-09-29 on MT5 build 6182: RESULT PASS, passed=206, failed=0; after the 1.12 item 16 update: RESULT PASS, passed=225, failed=0. The rapid-sample smoke run (docs/Phase1_RunCard.md) has not been executed. Phase 1 becomes COMPLETE only after both pass.`
+`Compile/Tests: MetaEditor 5.0.0.6182: LSR_Expert, LSR_Phase1_Tests and LSR_RawTickAudit each compiled with 0 errors, 0 warnings. Blocking tests executed 2026-09-29 on MT5 build 6182: RESULT PASS, passed=206, failed=0; after the 1.12 item 16 update: RESULT PASS, passed=225, failed=0. Rapid-sample smoke run (XAUUSD, FundedNext-Server 2, real ticks, 2026.01.01 to 2026.07.01 exclusive, deposit 100000 USD, all inputs at their defaults): DATA-PASSED. Fallback share 0.0648%, quarantine share 0.0689%, 6 auto-detected closures, 6 quarantined gaps, 0 tick anomalies, 0 OHLC mismatches on M5/M15/H1. The packet is in research/phase1_smoke/ (manifest sha256 ae30bed8...51ba31).`
 
-`Blocking limitations: an MT5 script and a tester run need a connected terminal. The Phase 1 Gate packet must come from the FundedNext XAUUSD real-tick run.`
+`Blocking limitations: none. Note: in the submitted packet the tester-side audit left the final minute (2026-06-30 23:59) unaudited; the end-of-run flush has since been fixed to include it. Gate results are unaffected.`
 # Phase 2 — Liquidity Model, Exact Sweep Events & Python Reference Foundation
 
 ## Goal
@@ -2775,6 +2775,10 @@ Use exactly this compact structure inside the roadmap:
 ---
 
 # Roadmap Update Log
+
+## Update 2026-09-29 — Phase 1 COMPLETE
+
+- Third smoke run (tester end date 2026.07.01) covered the full declared range and was DATA-PASSED. The Phase 1 Gate packet is stored in `research/phase1_smoke/`. Phase 2 may begin from this state.
 
 ## Update 2026-09-29 — Second rapid-sample smoke run
 
