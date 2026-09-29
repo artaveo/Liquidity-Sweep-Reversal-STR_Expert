@@ -2845,6 +2845,11 @@ Use exactly this compact structure inside the roadmap:
 
 # Roadmap Update Log
 
+## Update 2026-09-29 — LSR strategy closed by owner; research continues as ORB
+
+- After the Phase 3 event study (no demonstrated edge; mean NetR negative or near zero on every timeframe, matching the external evidence), the owner closed the Liquidity Sweep Reversal strategy. Phases 4–9 of this roadmap will not be executed.
+- The Phase 1 contract and the shared engine modules are reused unchanged by `Opening_Range_Breakout_Roadmap.md`, which now governs the project. This file is kept as the permanent record of LSR Phases 1–3.
+
 ## Update 2026-09-29 — Phase 3 COMPLETE (gate classified)
 
 - Event study on the rapid sample: M5 = STOP_EARLY_REDESIGN (removed from the active research set), M15 = CONTINUE, H1 = INCONCLUSIVE. Project = CONTINUE. Added 3.8 closures. The active research TimeframeSet for Phase 4 is M15 and H1; M5 remains reported only as a removed trial.
