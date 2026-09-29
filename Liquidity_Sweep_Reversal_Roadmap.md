@@ -2804,6 +2804,10 @@ Use exactly this compact structure inside the roadmap:
 
 # Roadmap Update Log
 
+## Update 2026-09-29 — Test script renamed
+
+- Owner-approved exception to architecture rule 16 and the maintenance protocol, which otherwise keep filenames fixed. `MQL5/Scripts/LiquiditySweepReversal/LSR_Phase1_Tests.mq5` is renamed to `LSR_Tests.mq5`. It is the single blocking-test script for every phase, and a phase number in its name was misleading. The old file is deleted wherever it was installed. Earlier completion records keep the old name because they record the historical state.
+
 ## Update 2026-09-29 — Phase 1 COMPLETE
 
 - Third smoke run (tester end date 2026.07.01) covered the full declared range and was DATA-PASSED. The Phase 1 Gate packet is stored in `research/phase1_smoke/`. Phase 2 may begin from this state.

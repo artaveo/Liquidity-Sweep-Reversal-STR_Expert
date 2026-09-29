@@ -1,7 +1,7 @@
 """Blocking Phase 2 event fixtures for the Python reference.
 
 The same fixtures, with the same expected values, are implemented in
-MQL5/Scripts/LiquiditySweepReversal/LSR_Phase1_Tests.mq5 (suite "2 Events").
+MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5 (suite "2 Events").
 Run:  python -m unittest discover -s python/tests -v
 """
 

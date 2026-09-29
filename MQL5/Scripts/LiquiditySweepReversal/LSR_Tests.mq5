@@ -1,12 +1,12 @@
 //+------------------------------------------------------------------+
-//| LSR_Phase1_Tests.mq5                                             |
-//| Blocking deterministic tests for the Phase 1 contract.           |
+//| LSR_Tests.mq5                                                    |
+//| Blocking deterministic tests for every phase (single script).    |
 //| Pure fixtures only: no broker data, no trading, any chart works. |
-//| Result: Experts log + Common\Files\LSR\tests\phase1_tests.txt    |
+//| Result: Experts log + Common\Files\LSR\tests\lsr_tests.txt       |
 //+------------------------------------------------------------------+
 #property copyright   "Liquidity Sweep Reversal"
 #property version     "1.00"
-#property description "Phase 1 blocking tests (no trading)"
+#property description "Blocking tests for all phases (no trading)"
 #property script_show_inputs
 
 #include "../../Include/LiquiditySweepReversal/LSR_Phase2.mqh"
@@ -1175,7 +1175,7 @@ void OnStart(void)
    string summary = StringFormat("RESULT: %s  passed=%d failed=%d  build=%d",
                                  g_fail == 0 ? "PASS" : "FAIL", g_pass, g_fail, (int)TerminalInfoInteger(TERMINAL_BUILD));
    g_report += "\n" + summary + "\n";
-   LSR_WriteUtf8File("LSR\\tests\\phase1_tests.txt", g_report, true);
+   LSR_WriteUtf8File("LSR\\tests\\lsr_tests.txt", g_report, true);
    Print("LSR Phase 1 tests ", summary);
 
    if(InpCloseTerminalWhenDone)

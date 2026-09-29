@@ -4,7 +4,7 @@ Phase 2 adds the deterministic event layer to `LSR_Expert`. The EA still never t
 
 ## 1. Blocking tests
 
-- **MQL5:** drag `Scripts\LiquiditySweepReversal\LSR_Phase1_Tests` onto any chart. The result must be `RESULT: PASS ... failed=0`. This single script covers Phase 1 and Phase 2.
+- **MQL5:** drag `Scripts\LiquiditySweepReversal\LSR_Tests` onto any chart. The result must be `RESULT: PASS ... failed=0`. This single script covers Phase 1 and Phase 2.
 - **Python** (3.12, standard library only), from the repository root:
 
   ```

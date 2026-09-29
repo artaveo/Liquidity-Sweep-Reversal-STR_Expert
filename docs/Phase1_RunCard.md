@@ -9,7 +9,7 @@ Copy the repository's `MQL5` folder over the terminal data folder (MetaEditor â†
 | Path | Purpose |
 |---|---|
 | `MQL5/Experts/LiquiditySweepReversal/LSR_Expert.mq5` | Phase 1 EA (validates the contract, audits data, writes the run package; **does not trade**) |
-| `MQL5/Scripts/LiquiditySweepReversal/LSR_Phase1_Tests.mq5` | Blocking deterministic tests (pure fixtures; runs on any chart) |
+| `MQL5/Scripts/LiquiditySweepReversal/LSR_Tests.mq5` | Blocking deterministic tests (pure fixtures; runs on any chart) |
 | `MQL5/Scripts/LiquiditySweepReversal/LSR_RawTickAudit.mq5` | Raw real-tick audit outside the Strategy Tester |
 | `MQL5/Include/LiquiditySweepReversal/*.mqh` | Phase 1 contract library |
 
@@ -17,9 +17,9 @@ Compile all three programs in MetaEditor. Each one must report `0 errors, 0 warn
 
 ## 2. Blocking tests (run first)
 
-1. Drag `LSR_Phase1_Tests` onto any chart.
+1. Drag `LSR_Tests` onto any chart.
 2. The Experts log must end with `LSR Phase 1 tests RESULT: PASS passed=N failed=0`.
-3. Evidence file: `Common\Files\LSR\tests\phase1_tests.txt`.
+3. Evidence file: `Common\Files\LSR\tests\lsr_tests.txt`.
 
 If any test fails, stop. Phase 1 is not complete.
 
