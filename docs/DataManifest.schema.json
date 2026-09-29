@@ -26,7 +26,7 @@
       "required": ["code_sha", "roadmap_file", "roadmap_sha256"],
       "properties": {
         "code_sha": { "type": "string", "description": "git commit SHA declared in the Run Card (empty = not declared)" },
-        "roadmap_file": { "const": "Liquidity_Sweep_Reversal_Roadmap.md" },
+        "roadmap_file": { "enum": ["Liquidity_Sweep_Reversal_Roadmap.md", "Opening_Range_Breakout_Roadmap.md"] },
         "roadmap_sha256": { "type": "string" }
       }
     },
@@ -119,6 +119,31 @@
           "equity": { "type": "number" },
           "account_rule_state": { "enum": ["OK", "NEAR_BREACH", "BREACH"] },
           "account_rule_engine": { "type": "object" }
+        }
+      }
+    },
+    "orb": {
+      "type": "object",
+      "description": "Optional. Written by ORB_Expert.mq5 (Opening_Range_Breakout_Roadmap.md 1.3); absent in LSR packages.",
+      "required": ["contract_id", "roadmap_file", "primary_trial", "or_lengths"],
+      "properties": {
+        "contract_id": { "type": "string" },
+        "roadmap_file": { "const": "Opening_Range_Breakout_Roadmap.md" },
+        "primary_trial": { "const": "OR5/UNFILTERED/R10_EOD" },
+        "co_reported_trial": { "type": "string" },
+        "or_lengths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["or_length", "day_rows", "trade_days", "orb_days_sha256", "orb_trades_sha256"],
+            "properties": {
+              "or_length": { "enum": ["OR5", "OR15"] },
+              "day_rows": { "type": "integer" },
+              "trade_days": { "type": "integer" },
+              "orb_days_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" },
+              "orb_trades_sha256": { "type": "string", "pattern": "^([0-9a-f]{64})?$" }
+            }
+          }
         }
       }
     },
